@@ -298,30 +298,30 @@ def show_chart_tip():
 
 **📊 캔들 하나 = 하루치 주가 요약**
 
-<table style="width:100%; border-collapse:collapse; margin:8px 0">
-<tr style="background:#1a1a2e; color:white">
-  <th style="padding:8px; text-align:center">모양</th>
-  <th style="padding:8px; text-align:left">부위</th>
-  <th style="padding:8px; text-align:left">의미</th>
+<table style="width:100%; border-collapse:collapse; margin:8px 0; border:1px solid #e0e0e0">
+<tr style="background:#f5f5f5; color:#333">
+  <th style="padding:8px; text-align:center; border:1px solid #e0e0e0">모양</th>
+  <th style="padding:8px; text-align:left; border:1px solid #e0e0e0">부위</th>
+  <th style="padding:8px; text-align:left; border:1px solid #e0e0e0">의미</th>
 </tr>
-<tr style="background:#2a1a1a">
-  <td rowspan="4" style="padding:12px; text-align:center; font-size:1.6rem; vertical-align:middle">
+<tr style="background:#fff5f5">
+  <td rowspan="4" style="padding:12px; text-align:center; font-size:1.6rem; vertical-align:middle; border:1px solid #e0e0e0">
     🕯️
   </td>
-  <td style="padding:6px 8px; color:#ff6b6b">윗 꼬리</td>
-  <td style="padding:6px 8px">그날 <b>최고가</b> (여기까지 올랐어요)</td>
+  <td style="padding:6px 10px; color:#c62828; font-weight:bold; border:1px solid #e0e0e0">윗 꼬리</td>
+  <td style="padding:6px 10px; border:1px solid #e0e0e0">그날 <b>최고가</b> (여기까지 올랐어요)</td>
 </tr>
-<tr style="background:#2a1a1a">
-  <td style="padding:6px 8px; color:#ff6b6b">몸통 위</td>
-  <td style="padding:6px 8px">🔴빨간: <b>종가</b>(마감가) / 🔵파란: <b>시가</b>(시작가)</td>
+<tr style="background:#fff5f5">
+  <td style="padding:6px 10px; color:#c62828; font-weight:bold; border:1px solid #e0e0e0">몸통 위</td>
+  <td style="padding:6px 10px; border:1px solid #e0e0e0">🔴 빨간 캔들: <b>종가</b>(마감가) &nbsp;/&nbsp; 🔵 파란 캔들: <b>시가</b>(시작가)</td>
 </tr>
-<tr style="background:#2a1a1a">
-  <td style="padding:6px 8px; color:#6bb5ff">몸통 아래</td>
-  <td style="padding:6px 8px">🔴빨간: <b>시가</b>(시작가) / 🔵파란: <b>종가</b>(마감가)</td>
+<tr style="background:#f5f8ff">
+  <td style="padding:6px 10px; color:#1565c0; font-weight:bold; border:1px solid #e0e0e0">몸통 아래</td>
+  <td style="padding:6px 10px; border:1px solid #e0e0e0">🔴 빨간 캔들: <b>시가</b>(시작가) &nbsp;/&nbsp; 🔵 파란 캔들: <b>종가</b>(마감가)</td>
 </tr>
-<tr style="background:#2a1a1a">
-  <td style="padding:6px 8px; color:#6bb5ff">아랫 꼬리</td>
-  <td style="padding:6px 8px">그날 <b>최저가</b> (여기까지 내렸어요)</td>
+<tr style="background:#f5f8ff">
+  <td style="padding:6px 10px; color:#1565c0; font-weight:bold; border:1px solid #e0e0e0">아랫 꼬리</td>
+  <td style="padding:6px 10px; border:1px solid #e0e0e0">그날 <b>최저가</b> (여기까지 내렸어요)</td>
 </tr>
 </table>
 
