@@ -13,6 +13,31 @@ import requests
 import re
 from datetime import datetime, timedelta
 
+@st.cache_resource
+def load_knowledge_base():
+    kb_path = os.path.join(os.path.dirname(__file__), "knowledge_base.json")
+    try:
+        with open(kb_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def search_knowledge(query, top_k=4):
+    kb = load_knowledge_base()
+    if not kb:
+        return []
+    query_words = {w for w in query.replace(",", " ").replace("?", " ").split() if len(w) >= 2}
+    if not query_words:
+        return []
+    scored = []
+    for chunk in kb:
+        text = chunk.get("text", "")
+        score = sum(1 for w in query_words if w in text)
+        if score > 0:
+            scored.append((score, chunk))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for _, c in scored[:top_k]]
+
 st.set_page_config(
     page_title="나의 주식 비서",
     page_icon="📈",
@@ -472,7 +497,9 @@ def add_message(role, content):
     st.session_state.messages.append(msg)
     save_history(session_id, st.session_state.messages)
 
-def ai_analyze(prompt):
+def ai_analyze(prompt, knowledge_context=""):
+    if knowledge_context:
+        prompt = knowledge_context + "\n\n" + prompt
     try:
         response = st.session_state.chat_session.send_message(prompt)
         return response.text
@@ -490,24 +517,20 @@ if page == "📚 공부방":
     st.markdown('<div class="big-title">📚 공부방 — 무엇이든 물어보세요!</div>', unsafe_allow_html=True)
     st.caption("경제·주식 왕초보 전용 AI 선생님. 모르는 게 있으면 뭐든 물어보세요 😊")
 
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        st.markdown("#### 빠른 질문")
-        quick_qs = [
-            "주식이 뭔가요?",
-            "금리가 뭔가요?",
-            "ETF가 뭔가요?",
-            "PER이 뭔가요?",
-            "환율이 주식에 미치는 영향은?",
-            "코스피 vs 나스닥 차이는?",
-            "인플레이션이 뭔가요?",
-            "분산투자가 뭔가요?",
-        ]
-        for q in quick_qs:
+    # ── 빠른 질문 버튼 (상단 가로 배치)
+    quick_qs = [
+        "주식이 뭔가요?", "금리가 뭔가요?", "ETF가 뭔가요?", "PER이 뭔가요?",
+        "환율이 주식에 미치는 영향은?", "코스피 vs 나스닥 차이는?",
+        "인플레이션이 뭔가요?", "분산투자가 뭔가요?",
+    ]
+    q_cols = st.columns(4)
+    for i, q in enumerate(quick_qs):
+        with q_cols[i % 4]:
             if st.button(q, use_container_width=True, key=f"quick_{q}"):
                 st.session_state.pending_question = q
 
-        st.markdown("---")
+    del_col, _ = st.columns([1, 3])
+    with del_col:
         if st.button("🗑️ 대화 내역 전체 삭제", use_container_width=True):
             st.session_state.messages = []
             clear_history(session_id)
@@ -515,42 +538,56 @@ if page == "📚 공부방":
             st.session_state.chat_session = model.start_chat(history=[])
             st.rerun()
 
-    with col1:
-        if not st.session_state.messages:
-            st.markdown("""
-            <div class="tip-box">
-            💡 <b>이렇게 물어보세요!</b><br>
-            • "금리가 오르면 주식이 왜 떨어져요?"<br>
-            • "삼성전자 주식은 왜 사람들이 사나요?"<br>
-            • "S&P500 ETF가 좋다는데 그게 뭔가요?"<br>
-            • "100만원으로 주식 시작하려면 어떻게 해요?"
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown("---")
 
-        chat_container = st.container(height=450)
-        with chat_container:
-            for msg in st.session_state.messages:
-                with st.chat_message(msg["role"]):
-                    st.markdown(msg["content"])
-                    if msg.get("timestamp"):
-                        st.markdown(f'<div class="history-date">{msg["timestamp"]}</div>', unsafe_allow_html=True)
+    # ── 대화 내역 (컬럼 없이 전체 너비)
+    if not st.session_state.messages:
+        st.markdown("""
+        <div class="tip-box">
+        💡 <b>이렇게 물어보세요!</b><br>
+        • "금리가 오르면 주식이 왜 떨어져요?"<br>
+        • "삼성전자 주식은 왜 사람들이 사나요?"<br>
+        • "S&P500 ETF가 좋다는데 그게 뭔가요?"<br>
+        • "100만원으로 주식 시작하려면 어떻게 해요?"
+        </div>
+        """, unsafe_allow_html=True)
 
-        if "pending_question" in st.session_state and st.session_state.pending_question:
-            user_input = st.session_state.pending_question
-            st.session_state.pending_question = None
-            add_message("user", user_input)
-            with st.spinner("공부 중...✏️"):
-                answer = ai_analyze(user_input)
-            add_message("assistant", answer)
-            st.rerun()
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("timestamp"):
+                st.markdown(f'<div class="history-date">{msg["timestamp"]}</div>', unsafe_allow_html=True)
 
-        user_input = st.chat_input("궁금한 걸 물어보세요! 아무것도 몰라도 괜찮아요 😊")
-        if user_input:
-            add_message("user", user_input)
-            with st.spinner("공부 중...✏️"):
-                answer = ai_analyze(user_input)
-            add_message("assistant", answer)
-            st.rerun()
+    # ── 질문 처리
+    def handle_question(user_input):
+        add_message("user", user_input)
+        with st.spinner("공부 중...✏️"):
+            chunks = search_knowledge(user_input)
+            ctx = ""
+            if chunks:
+                ctx = "📚 참고 자료 (경제·주식 교육 교재에서 발췌):\n"
+                for c in chunks:
+                    ctx += f"\n[출처: {c['source']}]\n{c['text'][:400]}\n"
+                ctx += "\n위 자료를 참고해서 답변해주세요.\n"
+            answer = ai_analyze(user_input, knowledge_context=ctx)
+        add_message("assistant", answer)
+        st.rerun()
+
+    if "pending_question" in st.session_state and st.session_state.pending_question:
+        q = st.session_state.pending_question
+        st.session_state.pending_question = None
+        handle_question(q)
+
+    with st.form(key="chat_form", clear_on_submit=True):
+        f_col1, f_col2 = st.columns([6, 1])
+        with f_col1:
+            user_input = st.text_input("질문 입력",
+                                       placeholder="궁금한 걸 물어보세요! 아무것도 몰라도 괜찮아요 😊",
+                                       label_visibility="collapsed")
+        with f_col2:
+            submitted = st.form_submit_button("전송", use_container_width=True, type="primary")
+    if submitted and user_input:
+        handle_question(user_input)
 
 # ── 페이지 2: 경제 뉴스 ──────────────────────────────────────
 elif page == "📰 경제 뉴스":
