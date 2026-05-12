@@ -201,7 +201,7 @@ def get_us_stock(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
-        hist = stock.history(period="3mo")
+        hist = stock.history(period="6mo")
         return info, hist
     except Exception:
         return None, None
@@ -210,7 +210,7 @@ def get_us_stock(ticker):
 def get_kr_stock(ticker):
     try:
         end = datetime.today()
-        start = end - timedelta(days=90)
+        start = end - timedelta(days=180)
         df = fdr.DataReader(ticker, start, end)
         return df
     except Exception:
@@ -283,8 +283,13 @@ def make_candle_chart(df, title="", currency="KRW", height=420):
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
         font=dict(color="#fafafa"),
-        xaxis2=dict(showgrid=False),
-        xaxis=dict(showgrid=True, gridcolor="#2a2a2a"),
+        xaxis2=dict(showgrid=False, type="category"),
+        xaxis=dict(
+            showgrid=True, gridcolor="#2a2a2a",
+            type="category",  # 거래일만 표시 (주말·공휴일 빈칸 제거)
+            tickangle=-45,
+            nticks=12,        # 눈금 개수 적당히
+        ),
         yaxis=dict(title=y_label, showgrid=True, gridcolor="#2a2a2a"),
         yaxis2=dict(title="거래량", showgrid=False),
     )
@@ -901,7 +906,7 @@ elif page == "⭐ 관심 종목":
                                     st.plotly_chart(fig, use_container_width=True)
                             else:
                                 d_end = datetime.today()
-                                d_start = d_end - timedelta(days=90)
+                                d_start = d_end - timedelta(days=180)
                                 d_data = fdr.DataReader(ticker, d_start, d_end)
                                 if d_data is not None and len(d_data) > 1:
                                     d_price = float(d_data["Close"].iloc[-1])
