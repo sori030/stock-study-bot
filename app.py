@@ -542,6 +542,40 @@ def get_kospi_heatmap_data(top_n=30):
     except Exception:
         return pd.DataFrame()
 
+@st.cache_data(ttl=300)
+def get_sp500_heatmap_data(top_n=50):
+    try:
+        listing = fdr.StockListing('S&P500')
+        cap_col = next((c for c in listing.columns
+                        if c.lower() in ('marcap', 'market cap', 'marketcap', 'market_cap')), None)
+        if cap_col:
+            listing = listing.nlargest(top_n, cap_col)
+        else:
+            listing = listing.head(top_n)
+
+        sym_col  = next((c for c in listing.columns if c.lower() in ('symbol', 'code', 'ticker')), listing.columns[0])
+        name_col = next((c for c in listing.columns if c.lower() in ('name', 'longname', 'shortname')), listing.columns[1])
+        symbols = listing[sym_col].astype(str).tolist()
+        names   = listing[name_col].astype(str).tolist()
+        caps    = listing[cap_col].tolist() if cap_col else [1] * len(symbols)
+
+        raw   = yf.download(symbols, period="2d", progress=False, auto_adjust=True)
+        close = raw['Close'] if isinstance(raw['Close'], pd.DataFrame) else raw[['Close']]
+
+        results = []
+        for sym, name, cap in zip(symbols, names, caps):
+            try:
+                series = close[sym].dropna() if sym in close.columns else pd.Series()
+                pct = (series.iloc[-1] - series.iloc[-2]) / series.iloc[-2] * 100 if len(series) >= 2 else 0.0
+                results.append({"name": sym, "fullname": name, "code": sym,
+                                 "pct": round(float(pct), 2),
+                                 "cap": max(float(cap), 1) if cap else 1})
+            except Exception:
+                continue
+        return pd.DataFrame(results)
+    except Exception:
+        return pd.DataFrame()
+
 def make_stock_heatmap(df):
     df = df.copy()
     df['pct_c'] = df['pct'].clip(-5, 5)
@@ -1579,15 +1613,24 @@ elif page == "📊 주식 정보":
 
     st.markdown("---")
 
-    # ── 코스피 히트맵
-    st.markdown("### 🗺️ KOSPI 히트맵")
-    st.caption("시가총액 상위 30개 종목 · 타일 크기 = 시가총액 · 색상 = 오늘 등락률 (🔴 상승 / 🔵 하락)")
-    with st.spinner("히트맵 불러오는 중..."):
-        hm_df = get_kospi_heatmap_data(30)
-    if not hm_df.empty:
-        st.plotly_chart(make_stock_heatmap(hm_df), use_container_width=True)
-    else:
-        st.warning("히트맵 데이터를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
+    # ── 히트맵
+    st.markdown("### 🗺️ 시장 히트맵")
+    st.caption("타일 크기 = 시가총액 · 색상 = 오늘 등락률 (🔴 상승 / 🔵 하락)")
+    hm_tab1, hm_tab2 = st.tabs(["🇰🇷 KOSPI Top 30", "🇺🇸 S&P 500 Top 50"])
+    with hm_tab1:
+        with st.spinner("KOSPI 히트맵 불러오는 중..."):
+            hm_df = get_kospi_heatmap_data(30)
+        if not hm_df.empty:
+            st.plotly_chart(make_stock_heatmap(hm_df), use_container_width=True)
+        else:
+            st.warning("데이터를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
+    with hm_tab2:
+        with st.spinner("S&P 500 히트맵 불러오는 중..."):
+            sp_df = get_sp500_heatmap_data(50)
+        if not sp_df.empty:
+            st.plotly_chart(make_stock_heatmap(sp_df), use_container_width=True)
+        else:
+            st.warning("데이터를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
 
     st.markdown("---")
 
