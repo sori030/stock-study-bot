@@ -96,15 +96,22 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     width: calc(100% - 8px) !important;
     justify-content: center !important;
 }
-/* 카드 텍스트 가운데 정렬 */
+/* 카드 텍스트 가운데 정렬 + 줄바꿈 방지 */
 [data-testid="stRadio"] [data-baseweb="radio"] > div:last-child {
     width: 100% !important;
     text-align: center !important;
+    overflow: hidden !important;
 }
-[data-testid="stRadio"] [data-baseweb="radio"] p {
+[data-testid="stRadio"] [data-baseweb="radio"] p,
+[data-testid="stRadio"] [data-baseweb="radio"] label,
+[data-testid="stRadio"] [data-baseweb="radio"] span {
     text-align: center !important;
     width: 100% !important;
     white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 0.9rem !important;
+    display: block !important;
 }
 /* 호버 */
 [data-testid="stRadio"] [data-baseweb="radio"]:hover {
