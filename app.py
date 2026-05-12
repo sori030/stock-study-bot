@@ -90,16 +90,25 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 10px !important;
     padding: 10px 14px !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     cursor: pointer !important;
     transition: all 0.18s ease !important;
+    width: 80% !important;
+    justify-content: center !important;
+}
+/* 카드 텍스트 가운데 정렬 */
+[data-testid="stRadio"] [data-baseweb="radio"] > div:last-child {
+    width: 100% !important;
+    text-align: center !important;
+}
+[data-testid="stRadio"] [data-baseweb="radio"] p {
+    text-align: center !important;
     width: 100% !important;
 }
 /* 호버 */
 [data-testid="stRadio"] [data-baseweb="radio"]:hover {
     background: rgba(255,255,255,0.1) !important;
     border-color: rgba(255,255,255,0.22) !important;
-    transform: translateX(2px) !important;
 }
 /* 선택된 카드 */
 [data-testid="stRadio"] [aria-checked="true"] {
