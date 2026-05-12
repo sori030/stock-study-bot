@@ -74,61 +74,30 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
 [data-testid="stSidebar"] hr {
     border-color: #334155 !important;
 }
-/* ── 사이드바 카드형 네비게이션 ── */
-[data-testid="stRadio"],
-[data-testid="stRadio"] > div,
-[data-testid="stRadio"] > div > div {
-    width: 100% !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 6px !important;
-}
-/* 라디오 동그라미 숨기기 */
-[data-testid="stRadio"] [data-baseweb="radio"] > div:first-child {
-    display: none !important;
-}
-/* 카드 스타일 */
-[data-testid="stRadio"] [data-baseweb="radio"] {
+/* ── 사이드바 버튼형 네비게이션 ── */
+[data-testid="stSidebar"] .stButton > button {
     background: rgba(255,255,255,0.05) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
+    border: 1px solid rgba(255,255,255,0.15) !important;
     border-radius: 10px !important;
+    color: #cbd5e1 !important;
+    font-size: 0.92rem !important;
     padding: 12px 16px !important;
-    margin: 0 !important;
-    cursor: pointer !important;
-    transition: all 0.18s ease !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-    justify-content: center !important;
-}
-/* 카드 텍스트 가운데 정렬 + 줄바꿈 방지 */
-[data-testid="stRadio"] [data-baseweb="radio"] > div:last-child {
-    width: 100% !important;
+    margin: 2px 0 !important;
     text-align: center !important;
-    overflow: hidden !important;
-}
-[data-testid="stRadio"] [data-baseweb="radio"] p,
-[data-testid="stRadio"] [data-baseweb="radio"] label,
-[data-testid="stRadio"] [data-baseweb="radio"] span {
-    text-align: center !important;
-    width: 100% !important;
     white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    font-size: 0.9rem !important;
-    display: block !important;
+    transition: all 0.18s ease !important;
 }
-/* 호버 */
-[data-testid="stRadio"] [data-baseweb="radio"]:hover {
-    background: rgba(255,255,255,0.1) !important;
-    border-color: rgba(255,255,255,0.22) !important;
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.12) !important;
+    border-color: rgba(255,255,255,0.3) !important;
+    transform: none !important;
+    box-shadow: none !important;
 }
-/* 선택된 카드 */
-[data-testid="stRadio"] [aria-checked="true"] {
-    background: rgba(59,130,246,0.2) !important;
-    border-color: #3b82f6 !important;
+/* 선택된 메뉴 (primary 타입) */
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: rgba(59,130,246,0.25) !important;
+    border: 1px solid #3b82f6 !important;
     border-left: 3px solid #60a5fa !important;
-}
-[data-testid="stRadio"] [aria-checked="true"] p {
     color: #93c5fd !important;
     font-weight: 700 !important;
 }
@@ -344,11 +313,18 @@ with st.sidebar:
         st.markdown("[무료 발급받기](https://aistudio.google.com/app/apikey)")
         st.markdown("---")
 
-    page = st.radio(
-        "메뉴",
-        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략"],
-        label_visibility="collapsed"
-    )
+    menu_items = ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략"]
+    if "page" not in st.session_state:
+        st.session_state.page = "📚 공부방"
+
+    for item in menu_items:
+        is_active = st.session_state.page == item
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(item, key=f"nav_{item}", use_container_width=True, type=btn_type):
+            st.session_state.page = item
+            st.rerun()
+
+    page = st.session_state.page
 
     st.markdown("---")
 
