@@ -480,24 +480,47 @@ elif page == "📰 경제 뉴스":
 # ── 페이지 3: 관심 종목 ──────────────────────────────────────
 elif page == "⭐ 관심 종목":
     st.markdown('<div class="big-title">⭐ 관심 종목 즐겨찾기</div>', unsafe_allow_html=True)
-    st.caption("자주 보는 종목을 저장해두고 한눈에 확인하세요")
+    st.caption("자주 보는 종목을 태그별로 분류해서 한눈에 확인하세요")
 
     if "watchlist" not in st.session_state:
         st.session_state.watchlist = load_watchlist(session_id)
 
-    # 종목 추가
+    # 기본 태그 + 색상
+    DEFAULT_TAGS = ["ETF", "기술주", "배당주", "성장주", "한국주식", "직접입력"]
+    TAG_COLORS = {
+        "ETF":    "#4CAF50",
+        "기술주":  "#2196F3",
+        "배당주":  "#FF9800",
+        "성장주":  "#9C27B0",
+        "한국주식": "#F44336",
+        "기타":    "#607D8B",
+    }
+
+    def tag_badge(tag):
+        color = TAG_COLORS.get(tag, "#607D8B")
+        return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
+
+    # ── 종목 추가 ──
     st.markdown("### ➕ 종목 추가")
-    col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
+    col_add1, col_add2, col_add3, col_add4 = st.columns([2, 1, 1, 1])
     with col_add1:
-        new_ticker = st.text_input("종목 코드 입력", placeholder="미국: AAPL / 한국: 005930", label_visibility="collapsed")
+        new_ticker = st.text_input("종목 코드", placeholder="미국: AAPL / 한국: 005930", label_visibility="collapsed")
     with col_add2:
         market = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], label_visibility="collapsed")
     with col_add3:
+        tag_choice = st.selectbox("태그", DEFAULT_TAGS, label_visibility="collapsed")
+    with col_add4:
         if st.button("추가하기", use_container_width=True, type="primary"):
             if new_ticker:
                 ticker = new_ticker.upper().strip() if "미국" in market else new_ticker.strip()
                 market_tag = "US" if "미국" in market else "KR"
-                entry = {"ticker": ticker, "market": market_tag, "added": datetime.now().strftime("%Y-%m-%d")}
+                final_tag = tag_choice if tag_choice != "직접입력" else "기타"
+                entry = {
+                    "ticker": ticker,
+                    "market": market_tag,
+                    "tag": final_tag,
+                    "added": datetime.now().strftime("%Y-%m-%d")
+                }
                 existing = [w["ticker"] for w in st.session_state.watchlist]
                 if ticker not in existing:
                     st.session_state.watchlist.append(entry)
@@ -507,28 +530,42 @@ elif page == "⭐ 관심 종목":
                 else:
                     st.warning("이미 추가된 종목이에요!")
 
+    # 직접 입력 태그
+    if tag_choice == "직접입력":
+        custom_tag = st.text_input("태그 직접 입력", placeholder="예: 내가 사고싶은 주식, 공부중")
+        if custom_tag:
+            st.session_state["custom_tag"] = custom_tag
+
     st.markdown("---")
 
-    # 관심 종목 목록
     if not st.session_state.watchlist:
         st.markdown("""
         <div class="tip-box">
         💡 <b>이렇게 추가해보세요!</b><br>
-        • 미국 주식: AAPL (애플), TSLA (테슬라), SPY (S&P500 ETF)<br>
-        • 한국 주식: 005930 (삼성전자), 035420 (NAVER), 069500 (KODEX200)
+        • ETF: SPY (S&P500), QQQ (나스닥), 069500 (KODEX200)<br>
+        • 기술주: AAPL (애플), NVDA (엔비디아), 005930 (삼성전자)<br>
+        • 배당주: 고배당 ETF, 리츠 등
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.markdown(f"### 📋 내 관심 종목 ({len(st.session_state.watchlist)}개)")
+        # ── 태그 필터 ──
+        all_tags = list(dict.fromkeys([w.get("tag", "기타") for w in st.session_state.watchlist]))
+        filter_options = ["전체 보기"] + all_tags
+        selected_filter = st.radio("태그 필터", filter_options, horizontal=True, label_visibility="collapsed")
 
-        for i, item in enumerate(st.session_state.watchlist):
+        filtered = st.session_state.watchlist if selected_filter == "전체 보기" \
+            else [w for w in st.session_state.watchlist if w.get("tag", "기타") == selected_filter]
+
+        st.markdown(f"### 📋 {selected_filter} ({len(filtered)}개)")
+
+        for i, item in enumerate(filtered):
             ticker = item["ticker"]
             market_tag = item["market"]
+            tag = item.get("tag", "기타")
 
             with st.container():
-                col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 1])
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
 
-                # 가격 데이터 가져오기
                 try:
                     if market_tag == "US":
                         info, hist = get_us_stock(ticker)
@@ -540,7 +577,7 @@ elif page == "⭐ 관심 종목":
                             price_str = f"${price:,.2f}"
                             flag = "🇺🇸"
                         else:
-                            raise Exception("데이터 없음")
+                            raise Exception()
                     else:
                         end = datetime.today()
                         start = end - timedelta(days=10)
@@ -553,13 +590,13 @@ elif page == "⭐ 관심 종목":
                             price_str = f"₩{price:,.0f}"
                             flag = "🇰🇷"
                         else:
-                            raise Exception("데이터 없음")
+                            raise Exception()
 
                     with col1:
-                        st.markdown(f"**{flag}**")
+                        st.markdown(f"**{flag} {ticker}**")
+                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"**{ticker}**")
-                        st.caption(name[:15] if len(name) > 15 else name)
+                        st.caption(name[:18] if len(name) > 18 else name)
                     with col3:
                         st.markdown(f"**{price_str}**")
                     with col4:
@@ -574,10 +611,9 @@ elif page == "⭐ 관심 종목":
 
                 except Exception:
                     with col1:
-                        st.markdown(f"**{'🇺🇸' if market_tag == 'US' else '🇰🇷'}**")
+                        st.markdown(f"**{'🇺🇸' if market_tag == 'US' else '🇰🇷'} {ticker}**")
+                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"**{ticker}**")
-                    with col3:
                         st.caption("데이터 불러오는 중...")
                     with col5:
                         if st.button("삭제", key=f"del_{ticker}_{i}"):
@@ -587,7 +623,6 @@ elif page == "⭐ 관심 종목":
 
                 st.divider()
 
-        # 전체 새로고침
         if st.button("🔄 전체 가격 새로고침", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
