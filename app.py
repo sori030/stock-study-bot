@@ -90,10 +90,10 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 10px !important;
     padding: 10px 14px !important;
-    margin: 0 auto !important;
+    margin: 0 4px !important;
     cursor: pointer !important;
     transition: all 0.18s ease !important;
-    width: 80% !important;
+    width: calc(100% - 8px) !important;
     justify-content: center !important;
 }
 /* 카드 텍스트 가운데 정렬 */
@@ -104,6 +104,7 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
 [data-testid="stRadio"] [data-baseweb="radio"] p {
     text-align: center !important;
     width: 100% !important;
+    white-space: nowrap !important;
 }
 /* 호버 */
 [data-testid="stRadio"] [data-baseweb="radio"]:hover {
