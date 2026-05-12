@@ -1504,15 +1504,25 @@ elif page == "📓 투자 일지":
         total_invested = sum(t["amount"] for t in buy_trades)
         total_sold = sum(t["amount"] for t in sell_trades)
 
+        # 달러/원 분리 계산
+        us_invested  = sum(t["amount"] for t in buy_trades if t["market"] == "US")
+        kr_invested  = sum(t["amount"] for t in buy_trades if t["market"] == "KR")
+        _usdkrw      = get_usdkrw()
+        total_krw    = kr_invested + us_invested * _usdkrw
+
         sc1, sc2, sc3, sc4 = st.columns(4)
         sc1.metric("총 거래 횟수", f"{total_trades}회")
         sc2.metric("매수 횟수", f"{len(buy_trades)}회")
         sc3.metric("매도 횟수", f"{len(sell_trades)}회")
-        realized = total_sold - sum(
-            t["amount"] for t in buy_trades
-            if any(s["ticker"] == t["ticker"] for s in sell_trades)
-        )
-        sc4.metric("총 매수금액", f"{'₩' if any(t['market']=='KR' for t in buy_trades) else ''}{total_invested:,.0f}")
+        with sc4:
+            st.metric("총 매수금액 (원화 합산)", f"₩{total_krw:,.0f}")
+            parts = []
+            if us_invested > 0:
+                parts.append(f"🇺🇸 ${us_invested:,.2f}")
+            if kr_invested > 0:
+                parts.append(f"🇰🇷 ₩{kr_invested:,.0f}")
+            if parts:
+                st.caption("  +  ".join(parts) + f"  (환율 ₩{_usdkrw:,.0f})")
 
         st.markdown("---")
 
