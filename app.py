@@ -196,21 +196,30 @@ if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=gemini_history)
 
 # ── 주식 데이터 함수 ──────────────────────────────────────────
+PERIOD_MAP = {
+    "1개월":  {"yf": "1mo",  "days": 30},
+    "3개월":  {"yf": "3mo",  "days": 90},
+    "6개월":  {"yf": "6mo",  "days": 180},
+    "1년":   {"yf": "1y",   "days": 365},
+    "5년":   {"yf": "5y",   "days": 365*5},
+    "10년":  {"yf": "10y",  "days": 365*10},
+}
+
 @st.cache_data(ttl=300)
-def get_us_stock(ticker):
+def get_us_stock(ticker, period="6mo"):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
-        hist = stock.history(period="6mo")
+        hist = stock.history(period=period)
         return info, hist
     except Exception:
         return None, None
 
 @st.cache_data(ttl=300)
-def get_kr_stock(ticker):
+def get_kr_stock(ticker, days=180):
     try:
         end = datetime.today()
-        start = end - timedelta(days=180)
+        start = end - timedelta(days=days)
         df = fdr.DataReader(ticker, start, end)
         return df
     except Exception:
@@ -283,13 +292,8 @@ def make_candle_chart(df, title="", currency="KRW", height=420):
         plot_bgcolor="#0e1117",
         paper_bgcolor="#0e1117",
         font=dict(color="#fafafa"),
-        xaxis2=dict(showgrid=False, type="category"),
-        xaxis=dict(
-            showgrid=True, gridcolor="#2a2a2a",
-            type="category",  # 거래일만 표시 (주말·공휴일 빈칸 제거)
-            tickangle=-45,
-            nticks=12,        # 눈금 개수 적당히
-        ),
+        xaxis2=dict(showgrid=False),
+        xaxis=dict(showgrid=True, gridcolor="#2a2a2a"),
         yaxis=dict(title=y_label, showgrid=True, gridcolor="#2a2a2a"),
         yaxis2=dict(title="거래량", showgrid=False),
     )
@@ -976,8 +980,23 @@ elif page == "📊 주식 정보":
             us_ticker = popular_us[selected_popular]
 
         if us_ticker:
+            # 기간 선택
+            us_period_key = f"us_period_{us_ticker}"
+            if us_period_key not in st.session_state:
+                st.session_state[us_period_key] = "6개월"
+            period_cols = st.columns(len(PERIOD_MAP))
+            for pi, pname in enumerate(PERIOD_MAP):
+                with period_cols[pi]:
+                    is_sel = st.session_state[us_period_key] == pname
+                    if st.button(pname, key=f"us_p_{pname}",
+                                 type="primary" if is_sel else "secondary",
+                                 use_container_width=True):
+                        st.session_state[us_period_key] = pname
+                        st.rerun()
+            us_yf_period = PERIOD_MAP[st.session_state[us_period_key]]["yf"]
+
             with st.spinner(f"{us_ticker} 데이터 불러오는 중..."):
-                info, hist = get_us_stock(us_ticker)
+                info, hist = get_us_stock(us_ticker, us_yf_period)
 
             if info and hist is not None and len(hist) > 0:
                 name = info.get("longName", us_ticker)
@@ -992,7 +1011,7 @@ elif page == "📊 주식 정보":
                 m3.metric("52주 최저", f"${info.get('fiftyTwoWeekLow', 'N/A')}")
                 m4.metric("PER", f"{info.get('trailingPE', 'N/A'):.1f}" if isinstance(info.get('trailingPE'), float) else "N/A")
 
-                fig = make_candle_chart(hist, title=f"{us_ticker} 최근 3개월", currency="USD", height=450)
+                fig = make_candle_chart(hist, title=f"{us_ticker} ({st.session_state[us_period_key]})", currency="USD", height=450)
                 st.plotly_chart(fig, use_container_width=True)
                 show_chart_tip()
 
@@ -1050,8 +1069,23 @@ PER: {info.get('trailingPE', 'N/A')}
             kr_ticker = popular_kr[selected_kr]
 
         if kr_ticker:
+            # 기간 선택
+            kr_period_key = f"kr_period_{kr_ticker}"
+            if kr_period_key not in st.session_state:
+                st.session_state[kr_period_key] = "6개월"
+            period_cols = st.columns(len(PERIOD_MAP))
+            for pi, pname in enumerate(PERIOD_MAP):
+                with period_cols[pi]:
+                    is_sel = st.session_state[kr_period_key] == pname
+                    if st.button(pname, key=f"kr_p_{pname}",
+                                 type="primary" if is_sel else "secondary",
+                                 use_container_width=True):
+                        st.session_state[kr_period_key] = pname
+                        st.rerun()
+            kr_days = PERIOD_MAP[st.session_state[kr_period_key]]["days"]
+
             with st.spinner(f"{kr_ticker} 데이터 불러오는 중..."):
-                kr_data = get_kr_stock(kr_ticker)
+                kr_data = get_kr_stock(kr_ticker, kr_days)
 
             if kr_data is not None and len(kr_data) > 1:
                 kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
@@ -1060,14 +1094,15 @@ PER: {info.get('trailingPE', 'N/A')}
                 change_pct = (latest_price - prev_price) / prev_price * 100
                 high_52 = float(kr_data["Close"].max())
                 low_52 = float(kr_data["Close"].min())
+                period_label = st.session_state[kr_period_key]
 
                 st.markdown(f"#### {kr_name} ({kr_ticker})")
                 m1, m2, m3 = st.columns(3)
                 m1.metric("현재가", f"₩{latest_price:,.0f}", f"{'+' if change_pct>0 else ''}{change_pct:.2f}%")
-                m2.metric("3개월 최고", f"₩{high_52:,.0f}")
-                m3.metric("3개월 최저", f"₩{low_52:,.0f}")
+                m2.metric(f"{period_label} 최고", f"₩{high_52:,.0f}")
+                m3.metric(f"{period_label} 최저", f"₩{low_52:,.0f}")
 
-                fig = make_candle_chart(kr_data, title=f"{kr_name} 최근 3개월", currency="KRW", height=450)
+                fig = make_candle_chart(kr_data, title=f"{kr_name} ({period_label})", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
                 show_chart_tip()
 
