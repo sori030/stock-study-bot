@@ -181,16 +181,18 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 📖 오늘의 경제용어")
-    _kb = load_knowledge_base()
-    _term_chunks = [c for c in _kb if c.get("source") == "한국은행 경제금융용어 800선"]
-    if _term_chunks:
-        _idx = datetime.today().timetuple().tm_yday % len(_term_chunks)
-        _chunk = _term_chunks[_idx]
-        _lines = [l.strip() for l in _chunk["text"].split("\n") if len(l.strip()) >= 2]
-        _term_name = _lines[0] if _lines else "경제용어"
-        _term_body = " ".join(_lines[1:])[:180] if len(_lines) > 1 else ""
-        st.markdown(f"**{_term_name}**")
-        st.caption(_term_body + ("..." if len(_term_body) == 180 else ""))
+    try:
+        _dict_path = os.path.join(os.path.dirname(__file__), "dictionary.json")
+        with open(_dict_path, "r", encoding="utf-8") as _f:
+            _dict_all = json.load(_f)
+        _idx = datetime.today().timetuple().tm_yday % len(_dict_all)
+        _today = _dict_all[_idx]
+        st.markdown(f"**{_today['term']}**")
+        # 첫 문장만 표시
+        _body = _today["text"].split(".")[0] + "." if "." in _today["text"] else _today["text"][:80]
+        st.caption(_body[:120])
+    except Exception:
+        pass
 
 if not api_key:
     st.warning("⬅️ 왼쪽 사이드바에서 Gemini API 키를 입력해주세요.")
