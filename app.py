@@ -81,6 +81,7 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     width: 100% !important;
     display: flex !important;
     flex-direction: column !important;
+    align-items: center !important;
     gap: 6px !important;
 }
 /* 라디오 동그라미 숨기기 */
@@ -96,7 +97,7 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     margin: 0 !important;
     cursor: pointer !important;
     transition: all 0.18s ease !important;
-    width: 100% !important;
+    width: 88% !important;
     box-sizing: border-box !important;
     justify-content: center !important;
 }
