@@ -290,6 +290,70 @@ def make_candle_chart(df, title="", currency="KRW", height=420):
     )
     return fig
 
+def show_chart_tip():
+    """캔들차트 읽는 법 팁 (expander)"""
+    with st.expander("💡 차트 읽는 법 (처음이라면 클릭!)"):
+        st.markdown("""
+<div style="line-height:1.9; font-size:0.92rem">
+
+**📊 캔들 하나 = 하루치 주가 요약**
+
+<table style="width:100%; border-collapse:collapse; margin:8px 0">
+<tr style="background:#1a1a2e; color:white">
+  <th style="padding:8px; text-align:center">모양</th>
+  <th style="padding:8px; text-align:left">부위</th>
+  <th style="padding:8px; text-align:left">의미</th>
+</tr>
+<tr style="background:#2a1a1a">
+  <td rowspan="4" style="padding:12px; text-align:center; font-size:1.6rem; vertical-align:middle">
+    🕯️
+  </td>
+  <td style="padding:6px 8px; color:#ff6b6b">윗 꼬리</td>
+  <td style="padding:6px 8px">그날 <b>최고가</b> (여기까지 올랐어요)</td>
+</tr>
+<tr style="background:#2a1a1a">
+  <td style="padding:6px 8px; color:#ff6b6b">몸통 위</td>
+  <td style="padding:6px 8px">🔴빨간: <b>종가</b>(마감가) / 🔵파란: <b>시가</b>(시작가)</td>
+</tr>
+<tr style="background:#2a1a1a">
+  <td style="padding:6px 8px; color:#6bb5ff">몸통 아래</td>
+  <td style="padding:6px 8px">🔴빨간: <b>시가</b>(시작가) / 🔵파란: <b>종가</b>(마감가)</td>
+</tr>
+<tr style="background:#2a1a1a">
+  <td style="padding:6px 8px; color:#6bb5ff">아랫 꼬리</td>
+  <td style="padding:6px 8px">그날 <b>최저가</b> (여기까지 내렸어요)</td>
+</tr>
+</table>
+
+**🎨 색깔 의미 (한국 증권앱 기준)**
+
+| | 의미 | 예시 |
+|---|---|---|
+| 🔴 **빨간 캔들** | 오늘 **올랐음** (시작보다 마감이 높음) | 10만→11만원 |
+| 🔵 **파란 캔들** | 오늘 **내렸음** (시작보다 마감이 낮음) | 10만→9만원 |
+
+> ⚠️ 미국 앱은 반대예요! (초록=상승, 빨강=하락) — 헷갈리지 마세요.
+
+---
+
+**📈 차트로 흐름 읽기**
+
+- **빨간 캔들이 연속** → 상승 추세, 투자자들이 사고 있어요
+- **파란 캔들이 연속** → 하락 추세, 투자자들이 팔고 있어요
+- **꼬리가 아주 길다** → 그날 주가가 크게 흔들렸다는 신호
+- **몸통이 크다** → 시가↔종가 차이가 크다 = 강한 움직임
+
+---
+
+**📊 아래 거래량 막대란?**
+
+막대 높이 = 그날 사고판 주식 수량
+막대가 **높을수록** → 그날 많은 사람이 관심을 가진 날
+거래량 급증 + 빨간 캔들 = 강한 매수 신호로 보기도 해요
+
+</div>
+""", unsafe_allow_html=True)
+
 # ── 관심종목 공통 함수 ────────────────────────────────────────
 TAG_COLORS = {
     "ETF":    "#4CAF50",
@@ -925,6 +989,7 @@ elif page == "📊 주식 정보":
 
                 fig = make_candle_chart(hist, title=f"{us_ticker} 최근 3개월", currency="USD", height=450)
                 st.plotly_chart(fig, use_container_width=True)
+                show_chart_tip()
 
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
@@ -999,6 +1064,7 @@ PER: {info.get('trailingPE', 'N/A')}
 
                 fig = make_candle_chart(kr_data, title=f"{kr_name} 최근 3개월", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
+                show_chart_tip()
 
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
