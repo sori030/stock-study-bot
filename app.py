@@ -549,15 +549,23 @@ elif page == "⭐ 관심 종목":
         """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
         try:
             if market_tag == "KR":
-                # 한국: KRX 리스트에서 한글 이름 조회
+                # 한국: KRX 맵에서 한글 이름 조회
                 krx_map = get_krx_name_map()
                 name = krx_map.get(ticker.zfill(6), ticker)
 
-                kr_etf_codes = ["069500","229200","360750","133690","195930","148020","114800","252670","kodex","tiger","kbstar","hanaro"]
-                tag = "ETF" if any(k in ticker.lower() for k in kr_etf_codes) else "한국주식"
+                # ETF 판별: 이름에 운용사 키워드 있으면 ETF (코드 하드코딩보다 정확)
+                etf_name_keywords = ["KODEX", "TIGER", "KBSTAR", "HANARO", "ARIRANG",
+                                     "KOSEF", "SOL ", "ACE ", "TIMEFOLIO", "FOCUS", "WOORI",
+                                     "PLUS", "TREX", "SMART", "ETF"]
+                # 이름으로 못 찾은 경우 보조 코드 목록으로 보완
+                etf_backup_codes = ["069500","229200","360750","133690","195930","148020",
+                                    "114800","252670","102110","251340","kodex","tiger"]
+                is_etf = (any(k in name.upper() for k in etf_name_keywords) or
+                          (name == ticker and any(k in ticker.lower() for k in etf_backup_codes)))
+                tag = "ETF" if is_etf else "한국주식"
                 return name, tag
 
-            # 미국 주식
+            # 미국 주식: yfinance로 실제 데이터 기반 분류
             info = yf.Ticker(ticker).info
             name = info.get("shortName") or info.get("longName") or ticker
             quote_type = info.get("quoteType", "")
@@ -566,11 +574,12 @@ elif page == "⭐ 관심 종목":
 
             if quote_type == "ETF":
                 tag = "ETF"
-            elif div_yield >= 0.03:
-                tag = "배당주"
             elif sector in ["Technology", "Communication Services"]:
                 tag = "기술주"
-            elif sector in ["Consumer Cyclical", "Healthcare", "Industrials"]:
+            elif div_yield >= 0.025:  # 배당수익률 2.5% 이상
+                tag = "배당주"
+            elif sector in ["Consumer Cyclical", "Healthcare", "Industrials",
+                            "Consumer Defensive", "Real Estate"]:
                 tag = "성장주"
             else:
                 tag = "개별주"
@@ -667,13 +676,21 @@ elif page == "⭐ 관심 종목":
             saved_name = item.get("name", "")
             flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
 
-            # 이름 없거나 코드 그대로이거나, 한국 종목인데 영문 이름인 경우 → 다시 가져오기
-            is_kr_english = (market_tag == "KR" and saved_name and saved_name.replace(" ", "").isascii())
-            if not saved_name or saved_name == ticker or is_kr_english:
+            # KR 종목: KRX 캐시 기반이라 빠름 → 항상 재분류해서 최신 상태 유지
+            # US 종목: 이름 없을 때만 yfinance 호출 (느린 API)
+            if market_tag == "KR":
+                fetched_name, fetched_tag = auto_classify_with_name(ticker, market_tag)
+                if fetched_name != saved_name or fetched_tag != tag:
+                    item["name"] = fetched_name
+                    item["tag"] = fetched_tag
+                    save_watchlist(session_id, st.session_state.watchlist)
+                saved_name = fetched_name
+                tag = fetched_tag
+            elif not saved_name or saved_name == ticker:
                 fetched_name, fetched_tag = auto_classify_with_name(ticker, market_tag)
                 saved_name = fetched_name
                 item["name"] = fetched_name
-                item["tag"] = fetched_tag  # 항상 태그도 갱신
+                item["tag"] = fetched_tag
                 tag = fetched_tag
                 save_watchlist(session_id, st.session_state.watchlist)
 
