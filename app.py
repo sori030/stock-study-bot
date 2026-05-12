@@ -1496,6 +1496,27 @@ elif page == "📊 주식 정보":
     else:
         st.warning("시장 데이터를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.")
 
+    st.markdown("""
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 4px 0">
+  <div style="background:#f8fafc;border-radius:10px;padding:10px 14px;border-left:3px solid #3b82f6">
+    <div style="font-size:0.78rem;font-weight:700;color:#1565c0;margin-bottom:4px">📌 코스피 (KOSPI)</div>
+    <div style="font-size:0.8rem;color:#475569;line-height:1.5">삼성전자·현대차 등 <b>대형 우량주</b> 약 800개가 모인 한국의 대표 주식시장</div>
+  </div>
+  <div style="background:#f8fafc;border-radius:10px;padding:10px 14px;border-left:3px solid #8b5cf6">
+    <div style="font-size:0.78rem;font-weight:700;color:#6d28d9;margin-bottom:4px">📌 코스닥 (KOSDAQ)</div>
+    <div style="font-size:0.8rem;color:#475569;line-height:1.5">IT·바이오 등 <b>중소·벤처기업</b> 위주의 시장. 미국의 나스닥과 비슷한 개념</div>
+  </div>
+  <div style="background:#f8fafc;border-radius:10px;padding:10px 14px;border-left:3px solid #10b981">
+    <div style="font-size:0.78rem;font-weight:700;color:#065f46;margin-bottom:4px">📌 S&P 500</div>
+    <div style="font-size:0.8rem;color:#475569;line-height:1.5">미국 <b>500대 대형주</b>를 모은 지수. 미국 경제 전체의 건강 상태를 보여줘요</div>
+  </div>
+  <div style="background:#f8fafc;border-radius:10px;padding:10px 14px;border-left:3px solid #f59e0b">
+    <div style="font-size:0.78rem;font-weight:700;color:#92400e;margin-bottom:4px">📌 나스닥 (NASDAQ)</div>
+    <div style="font-size:0.8rem;color:#475569;line-height:1.5">애플·구글·테슬라 등 <b>미국 기술주</b> 위주의 시장. 성장주 흐름을 파악할 때 봐요</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     st.markdown("---")
 
     tab1, tab2 = st.tabs(["🇺🇸 미국 주식", "🇰🇷 한국 주식"])
