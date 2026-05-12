@@ -506,6 +506,78 @@ def get_index_data():
             pass
     return result
 
+@st.cache_data(ttl=300)
+def get_kospi_heatmap_data(top_n=30):
+    try:
+        listing = fdr.StockListing('KOSPI')
+        cap_col = next((c for c in listing.columns if c.lower() in ('marcap', 'market cap', 'marketcap')), None)
+        if cap_col:
+            listing = listing.nlargest(top_n, cap_col)
+        else:
+            listing = listing.head(top_n)
+        codes = listing['Code'].astype(str).str.zfill(6).tolist()
+        names = listing['Name'].tolist()
+        caps  = listing[cap_col].tolist() if cap_col else [1] * len(codes)
+
+        yf_tickers = [f"{c}.KS" for c in codes]
+        raw = yf.download(yf_tickers, period="2d", progress=False, auto_adjust=True)
+
+        close = raw['Close'] if isinstance(raw['Close'], pd.DataFrame) else raw[['Close']]
+
+        results = []
+        for code, name, cap in zip(codes, names, caps):
+            try:
+                col = f"{code}.KS"
+                series = close[col].dropna() if col in close.columns else pd.Series()
+                if len(series) >= 2:
+                    pct = (series.iloc[-1] - series.iloc[-2]) / series.iloc[-2] * 100
+                else:
+                    pct = 0.0
+                results.append({"name": name, "code": code,
+                                 "pct": round(float(pct), 2),
+                                 "cap": max(float(cap), 1) if cap else 1})
+            except Exception:
+                continue
+        return pd.DataFrame(results)
+    except Exception:
+        return pd.DataFrame()
+
+def make_stock_heatmap(df):
+    df = df.copy()
+    df['pct_c'] = df['pct'].clip(-5, 5)
+    df['label'] = df.apply(
+        lambda r: f"{r['name']}<br>{'+' if r['pct'] >= 0 else ''}{r['pct']:.2f}%", axis=1)
+    fig = go.Figure(go.Treemap(
+        labels=df['label'],
+        parents=[''] * len(df),
+        values=df['cap'],
+        customdata=df[['pct']],
+        marker=dict(
+            colors=df['pct_c'],
+            colorscale=[
+                [0.0,  '#0d47a1'],
+                [0.35, '#1976d2'],
+                [0.5,  '#37474f'],
+                [0.65, '#e57373'],
+                [1.0,  '#b71c1c'],
+            ],
+            cmid=0,
+            showscale=True,
+            colorbar=dict(title="%", thickness=10, len=0.7,
+                          tickvals=[-5, -2, 0, 2, 5],
+                          ticktext=['-5%', '-2%', '0%', '+2%', '+5%']),
+        ),
+        textfont=dict(size=12, color='white', family='Pretendard Variable, sans-serif'),
+        hovertemplate='<b>%{label}</b><br>등락률: %{customdata[0]:.2f}%<extra></extra>',
+    ))
+    fig.update_layout(
+        height=420,
+        margin=dict(t=5, b=5, l=0, r=0),
+        paper_bgcolor='#0e1117',
+        font=dict(color='white'),
+    )
+    return fig
+
 # ── 캔들차트 + 거래량 공통 함수 ──────────────────────────────
 def make_candle_chart(df, title="", currency="KRW", height=420):
     """OHLCV DataFrame으로 캔들차트 + 거래량 생성 (한국식: 빨간=상승, 파란=하락)"""
@@ -1504,6 +1576,18 @@ elif page == "📊 주식 정보":
   <div style="font-size:0.75rem;color:#94a3b8;padding:4px 2px">미국 기술주 위주 지수</div>
 </div>
 """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── 코스피 히트맵
+    st.markdown("### 🗺️ KOSPI 히트맵")
+    st.caption("시가총액 상위 30개 종목 · 타일 크기 = 시가총액 · 색상 = 오늘 등락률 (🔴 상승 / 🔵 하락)")
+    with st.spinner("히트맵 불러오는 중..."):
+        hm_df = get_kospi_heatmap_data(30)
+    if not hm_df.empty:
+        st.plotly_chart(make_stock_heatmap(hm_df), use_container_width=True)
+    else:
+        st.warning("히트맵 데이터를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
 
     st.markdown("---")
 
