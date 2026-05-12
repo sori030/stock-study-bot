@@ -88,6 +88,27 @@ def build_gemini_history(messages):
         history.append({"role": role, "parts": [{"text": msg["content"]}]})
     return history
 
+# ── 관심 종목 저장/불러오기 ───────────────────────────────────
+def get_watchlist_file(session_id):
+    return os.path.join(HISTORY_DIR, f"watchlist_{session_id}.json")
+
+def load_watchlist(session_id):
+    path = get_watchlist_file(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_watchlist(session_id, watchlist):
+    try:
+        with open(get_watchlist_file(session_id), "w", encoding="utf-8") as f:
+            json.dump(watchlist, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 # ── 세션 ID 초기화 ───────────────────────────────────────────
 session_id = get_session_id()
 
@@ -109,7 +130,7 @@ with st.sidebar:
 
     page = st.radio(
         "메뉴",
-        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "🎯 나만의 전략"],
+        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "🎯 나만의 전략"],
         label_visibility="collapsed"
     )
 
@@ -456,7 +477,122 @@ elif page == "📰 경제 뉴스":
         else:
             st.info("미국 뉴스를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
 
-# ── 페이지 3: 주식 정보 ───────────────────────────────────────
+# ── 페이지 3: 관심 종목 ──────────────────────────────────────
+elif page == "⭐ 관심 종목":
+    st.markdown('<div class="big-title">⭐ 관심 종목 즐겨찾기</div>', unsafe_allow_html=True)
+    st.caption("자주 보는 종목을 저장해두고 한눈에 확인하세요")
+
+    if "watchlist" not in st.session_state:
+        st.session_state.watchlist = load_watchlist(session_id)
+
+    # 종목 추가
+    st.markdown("### ➕ 종목 추가")
+    col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
+    with col_add1:
+        new_ticker = st.text_input("종목 코드 입력", placeholder="미국: AAPL / 한국: 005930", label_visibility="collapsed")
+    with col_add2:
+        market = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], label_visibility="collapsed")
+    with col_add3:
+        if st.button("추가하기", use_container_width=True, type="primary"):
+            if new_ticker:
+                ticker = new_ticker.upper().strip() if "미국" in market else new_ticker.strip()
+                market_tag = "US" if "미국" in market else "KR"
+                entry = {"ticker": ticker, "market": market_tag, "added": datetime.now().strftime("%Y-%m-%d")}
+                existing = [w["ticker"] for w in st.session_state.watchlist]
+                if ticker not in existing:
+                    st.session_state.watchlist.append(entry)
+                    save_watchlist(session_id, st.session_state.watchlist)
+                    st.success(f"{ticker} 추가됐어요!")
+                    st.rerun()
+                else:
+                    st.warning("이미 추가된 종목이에요!")
+
+    st.markdown("---")
+
+    # 관심 종목 목록
+    if not st.session_state.watchlist:
+        st.markdown("""
+        <div class="tip-box">
+        💡 <b>이렇게 추가해보세요!</b><br>
+        • 미국 주식: AAPL (애플), TSLA (테슬라), SPY (S&P500 ETF)<br>
+        • 한국 주식: 005930 (삼성전자), 035420 (NAVER), 069500 (KODEX200)
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"### 📋 내 관심 종목 ({len(st.session_state.watchlist)}개)")
+
+        for i, item in enumerate(st.session_state.watchlist):
+            ticker = item["ticker"]
+            market_tag = item["market"]
+
+            with st.container():
+                col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 1])
+
+                # 가격 데이터 가져오기
+                try:
+                    if market_tag == "US":
+                        info, hist = get_us_stock(ticker)
+                        if info and hist is not None and len(hist) > 0:
+                            price = info.get("currentPrice") or info.get("regularMarketPrice") or float(hist["Close"].iloc[-1])
+                            prev = info.get("previousClose", float(hist["Close"].iloc[-2]) if len(hist) > 1 else price)
+                            change_pct = (price - prev) / prev * 100
+                            name = info.get("shortName", ticker)
+                            price_str = f"${price:,.2f}"
+                            flag = "🇺🇸"
+                        else:
+                            raise Exception("데이터 없음")
+                    else:
+                        end = datetime.today()
+                        start = end - timedelta(days=10)
+                        kr_data = fdr.DataReader(ticker, start, end)
+                        if kr_data is not None and len(kr_data) > 1:
+                            price = float(kr_data["Close"].iloc[-1])
+                            prev = float(kr_data["Close"].iloc[-2])
+                            change_pct = (price - prev) / prev * 100
+                            name = ticker
+                            price_str = f"₩{price:,.0f}"
+                            flag = "🇰🇷"
+                        else:
+                            raise Exception("데이터 없음")
+
+                    with col1:
+                        st.markdown(f"**{flag}**")
+                    with col2:
+                        st.markdown(f"**{ticker}**")
+                        st.caption(name[:15] if len(name) > 15 else name)
+                    with col3:
+                        st.markdown(f"**{price_str}**")
+                    with col4:
+                        color = "🔴" if change_pct > 0 else "🔵"
+                        sign = "+" if change_pct > 0 else ""
+                        st.markdown(f"{color} {sign}{change_pct:.2f}%")
+                    with col5:
+                        if st.button("삭제", key=f"del_{ticker}_{i}"):
+                            st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
+                            save_watchlist(session_id, st.session_state.watchlist)
+                            st.rerun()
+
+                except Exception:
+                    with col1:
+                        st.markdown(f"**{'🇺🇸' if market_tag == 'US' else '🇰🇷'}**")
+                    with col2:
+                        st.markdown(f"**{ticker}**")
+                    with col3:
+                        st.caption("데이터 불러오는 중...")
+                    with col5:
+                        if st.button("삭제", key=f"del_{ticker}_{i}"):
+                            st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
+                            save_watchlist(session_id, st.session_state.watchlist)
+                            st.rerun()
+
+                st.divider()
+
+        # 전체 새로고침
+        if st.button("🔄 전체 가격 새로고침", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+# ── 페이지 4: 주식 정보 ──────────────────────────────────────
 elif page == "📊 주식 정보":
     st.markdown('<div class="big-title">📊 실시간 주식 정보</div>', unsafe_allow_html=True)
     st.caption("실제 주식 데이터를 보면서 공부해요. 데이터는 Yahoo Finance / FinanceDataReader 제공 (무료)")
