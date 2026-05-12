@@ -1564,10 +1564,13 @@ elif page == "📓 투자 일지":
 
         tab_all, tab_grouped = st.tabs(["📄 전체 내역", "📦 종목별 묶음"])
 
+        if "editing_id" not in st.session_state:
+            st.session_state.editing_id = None
+        if "split_ticker" not in st.session_state:
+            st.session_state.split_ticker = None
+
         # ══ 전체 내역 탭 ══════════════════════════════════════
         with tab_all:
-            if "editing_id" not in st.session_state:
-                st.session_state.editing_id = None
 
             hj1,hj2,hj3,hj4,hj5,hj6,hj7 = st.columns([1.2,2,1,1.5,1,2,1.2])
             for col, label in zip([hj1,hj2,hj3,hj4,hj5,hj6,hj7],
@@ -1671,19 +1674,16 @@ elif page == "📓 투자 일지":
                     else:
                         eval_val_krw = eval_val_native
                         pnl_krw      = pnl_native
-                    pnl_color = "#e53935" if pnl_pct >= 0 else "#1565c0"
                     sign = "+" if pnl_pct >= 0 else ""
                     price_str = f"{currency}{cur_price:,.2f}"
-                    pnl_badge = (
-                        f'<span style="color:{pnl_color};font-weight:bold">'
-                        f'{sign}{pnl_pct:.2f}%</span>'
-                    )
+                    pnl_emoji = "🔺" if pnl_pct >= 0 else "🔻"
+                    pnl_badge = f"{pnl_emoji} {sign}{pnl_pct:.2f}%"
                 else:
                     eval_val_krw = pnl_krw = pnl_pct = None
                     price_str = "조회 중..."
                     pnl_badge = ""
 
-                label = f"{flag} **{name}** ({tk}) &nbsp;|&nbsp; 현재가 {price_str} &nbsp; {pnl_badge}"
+                label = f"{flag} {name} ({tk})  |  현재가 {price_str}  {pnl_badge}"
                 with st.expander(label, expanded=False):
                     # ── 핵심 지표 카드
                     m1, m2, m3, m4 = st.columns(4)
@@ -1724,6 +1724,53 @@ elif page == "📓 투자 일지":
                             f" = {currency}{t['amount']:,.2f}{memo_str}",
                             unsafe_allow_html=True
                         )
+
+                    # ── 주식 병합(리버스 스플릿) 처리
+                    st.markdown("---")
+                    if st.session_state.split_ticker == tk:
+                        st.markdown("**⚙️ 주식 병합 처리**")
+                        st.caption("병합 후 실제 수량과 평균단가를 입력하면 기존 매수 기록이 하나로 통합됩니다.")
+                        with st.form(key=f"split_form_{tk}"):
+                            sp1, sp2 = st.columns(2)
+                            with sp1:
+                                new_qty = st.number_input("병합 후 수량 (주)", min_value=1, step=1, value=1)
+                            with sp2:
+                                new_price = st.number_input(f"병합 후 평균단가 ({currency})", min_value=0.0001, step=0.01, format="%.4f", value=1.0)
+                            sp_save_col, sp_cancel_col = st.columns(2)
+                            with sp_save_col:
+                                sp_submit = st.form_submit_button("✅ 적용", type="primary", use_container_width=True)
+                            with sp_cancel_col:
+                                sp_cancel_btn = st.form_submit_button("취소", use_container_width=True)
+                        if sp_submit:
+                            first_buy = buys[0] if buys else tk_trades[0]
+                            new_record = {
+                                "id": str(uuid.uuid4())[:8],
+                                "date": first_buy["date"],
+                                "ticker": tk,
+                                "name": first_buy["name"],
+                                "market": first_buy["market"],
+                                "type": "매수",
+                                "price": round(float(new_price), 4),
+                                "quantity": int(new_qty),
+                                "amount": round(float(new_price) * int(new_qty), 2),
+                                "memo": "주식 병합 후 통합 기록"
+                            }
+                            st.session_state.journal = [
+                                t for t in st.session_state.journal
+                                if not (t["ticker"] == tk and t["type"] == "매수")
+                            ]
+                            st.session_state.journal.append(new_record)
+                            save_journal(session_id, st.session_state.journal)
+                            st.session_state.split_ticker = None
+                            st.rerun()
+                        if sp_cancel_btn:
+                            st.session_state.split_ticker = None
+                            st.rerun()
+                    else:
+                        if st.button("⚙️ 주식 병합 처리", key=f"split_btn_{tk}",
+                                     help="리버스 스플릿(주식 병합) 발생 시 클릭"):
+                            st.session_state.split_ticker = tk
+                            st.rerun()
 
 # ── 페이지 3: 나만의 전략 ─────────────────────────────────────
 elif page == "🎯 나만의 전략":
