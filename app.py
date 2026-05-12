@@ -1307,6 +1307,28 @@ PER: {info.get('trailingPE', 'N/A')}
                             st.rerun()
                         else:
                             st.info("이미 관심종목에 있어요!")
+
+                if st.button("📈 차트 패턴 AI 해석", key="us_chart_ai", use_container_width=True, type="primary"):
+                    with st.spinner("차트 패턴 분석 중..."):
+                        recent = hist.tail(20)
+                        ohlcv_lines = [
+                            f"{str(d)[:10]}: 시가={r['Open']:.2f}, 고가={r['High']:.2f}, 저가={r['Low']:.2f}, 종가={r['Close']:.2f}, 거래량={int(r['Volume'])}"
+                            for d, r in recent.iterrows()
+                        ]
+                        ohlcv_str = "\n".join(ohlcv_lines)
+                        chart_prompt = f"""다음은 미국 주식 {name}({us_ticker})의 최근 {len(recent)}일 캔들 데이터입니다 (USD):
+
+{ohlcv_str}
+
+위 데이터를 바탕으로 주식 왕초보에게 차트 패턴을 쉽게 설명해주세요:
+1. 현재 추세 — 상승/하락/횡보 중 어디인지, 왜 그렇게 보이는지
+2. 눈에 띄는 캔들 패턴 — 망치형, 도지, 장악형 등 최근에 나타난 패턴
+3. 지지선과 저항선 — 어떤 가격대에서 자주 멈추는지
+4. 거래량 흐름 — 거래량이 많은 날과 가격 변화의 관계
+5. 초보자 한마디 — 이 차트를 보고 주의해야 할 점 한 가지
+어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
+                        chart_answer = ai_analyze(chart_prompt)
+                    st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
             else:
                 st.error(f"'{us_ticker}' 데이터를 찾을 수 없어요. 티커를 다시 확인해주세요.")
 
@@ -1420,6 +1442,28 @@ PER: {info.get('trailingPE', 'N/A')}
                             st.rerun()
                         else:
                             st.info("이미 관심종목에 있어요!")
+
+                if st.button("📈 차트 패턴 AI 해석", key="kr_chart_ai", use_container_width=True, type="primary"):
+                    with st.spinner("차트 패턴 분석 중..."):
+                        recent = kr_data.tail(20)
+                        ohlcv_lines = [
+                            f"{str(d)[:10]}: 시가={r['Open']:,.0f}, 고가={r['High']:,.0f}, 저가={r['Low']:,.0f}, 종가={r['Close']:,.0f}, 거래량={int(r['Volume'])}"
+                            for d, r in recent.iterrows()
+                        ]
+                        ohlcv_str = "\n".join(ohlcv_lines)
+                        chart_prompt = f"""다음은 한국 주식 {kr_name}({kr_ticker})의 최근 {len(recent)}일 캔들 데이터입니다 (KRW):
+
+{ohlcv_str}
+
+위 데이터를 바탕으로 주식 왕초보에게 차트 패턴을 쉽게 설명해주세요:
+1. 현재 추세 — 상승/하락/횡보 중 어디인지, 왜 그렇게 보이는지
+2. 눈에 띄는 캔들 패턴 — 망치형, 도지, 장악형 등 최근에 나타난 패턴
+3. 지지선과 저항선 — 어떤 가격대에서 자주 멈추는지
+4. 거래량 흐름 — 거래량이 많은 날과 가격 변화의 관계
+5. 초보자 한마디 — 이 차트를 보고 주의해야 할 점 한 가지
+어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
+                        chart_answer = ai_analyze(chart_prompt)
+                    st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
             else:
                 st.error(f"'{kr_ticker}' 데이터를 찾을 수 없어요. 종목 코드를 다시 확인해주세요.")
 
