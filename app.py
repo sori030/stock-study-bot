@@ -1329,6 +1329,52 @@ PER: {info.get('trailingPE', 'N/A')}
 어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
                         chart_answer = ai_analyze(chart_prompt)
                     st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
+
+                # ── 🎯 매수·손절·익절 가이드
+                st.markdown("---")
+                st.markdown("#### 🎯 매수·손절·익절 가이드")
+                st.caption("⚠️ 아래 가격은 참고용이에요. 실제 투자 결정은 본인이 직접 하세요.")
+
+                g1, g2 = st.columns(2)
+                with g1:
+                    st.markdown("**🔴 손절 기준가 (Stop Loss)**")
+                    for pct in [5, 10, 15]:
+                        sl = price * (1 - pct / 100)
+                        st.markdown(f"- **-{pct}%** → `${sl:.2f}`")
+                with g2:
+                    st.markdown("**🟢 익절 목표가 (Take Profit)**")
+                    for pct in [10, 20, 30]:
+                        tp = price * (1 + pct / 100)
+                        st.markdown(f"- **+{pct}%** → `${tp:.2f}`")
+
+                if st.button("🤖 지금 이 종목 사도 될까? AI 판단", key="us_entry_ai", use_container_width=True):
+                    with st.spinner("AI가 매수 시점을 분석하는 중..."):
+                        recent20 = hist.tail(20)
+                        price_5d_ago = float(hist["Close"].iloc[-6]) if len(hist) >= 6 else price
+                        trend_5d = (price - price_5d_ago) / price_5d_ago * 100
+                        ohlcv_lines2 = [
+                            f"{str(d)[:10]}: 종가={r['Close']:.2f}, 거래량={int(r['Volume'])}"
+                            for d, r in recent20.iterrows()
+                        ]
+                        entry_prompt = f"""미국 주식 {name}({us_ticker}) 매수 시점 분석을 요청합니다.
+
+[현재 데이터]
+현재가: ${price:.2f}
+5일 등락: {'+' if trend_5d >= 0 else ''}{trend_5d:.2f}%
+52주 고가: ${info.get('fiftyTwoWeekHigh', '?')}  /  52주 저가: ${info.get('fiftyTwoWeekLow', '?')}
+PER: {info.get('trailingPE', 'N/A')}
+
+[최근 20일 종가·거래량]
+{chr(10).join(ohlcv_lines2)}
+
+주식 왕초보를 위해 다음을 쉽게 설명해주세요:
+1. 지금 이 시점이 매수하기 좋은가, 나쁜가, 애매한가? (이유 포함)
+2. 만약 산다면 어느 가격대에서 손절할지 (구체적 가격 제시)
+3. 목표 익절가 시나리오 1~2개 (구체적 가격 제시)
+4. 초보자가 이 종목 살 때 특히 주의할 점
+주의: 이건 교육 목적 참고 의견이고 실제 투자 결정은 본인이 해야 한다고 꼭 언급해주세요."""
+                        entry_answer = ai_analyze(entry_prompt)
+                    st.markdown(f'<div class="strategy-box">{entry_answer}</div>', unsafe_allow_html=True)
             else:
                 st.error(f"'{us_ticker}' 데이터를 찾을 수 없어요. 티커를 다시 확인해주세요.")
 
@@ -1464,6 +1510,51 @@ PER: {info.get('trailingPE', 'N/A')}
 어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
                         chart_answer = ai_analyze(chart_prompt)
                     st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
+
+                # ── 🎯 매수·손절·익절 가이드
+                st.markdown("---")
+                st.markdown("#### 🎯 매수·손절·익절 가이드")
+                st.caption("⚠️ 아래 가격은 참고용이에요. 실제 투자 결정은 본인이 직접 하세요.")
+
+                g1, g2 = st.columns(2)
+                with g1:
+                    st.markdown("**🔴 손절 기준가 (Stop Loss)**")
+                    for pct in [5, 10, 15]:
+                        sl = latest_price * (1 - pct / 100)
+                        st.markdown(f"- **-{pct}%** → `₩{sl:,.0f}`")
+                with g2:
+                    st.markdown("**🟢 익절 목표가 (Take Profit)**")
+                    for pct in [10, 20, 30]:
+                        tp = latest_price * (1 + pct / 100)
+                        st.markdown(f"- **+{pct}%** → `₩{tp:,.0f}`")
+
+                if st.button("🤖 지금 이 종목 사도 될까? AI 판단", key="kr_entry_ai", use_container_width=True):
+                    with st.spinner("AI가 매수 시점을 분석하는 중..."):
+                        price_5d_ago = float(kr_data["Close"].iloc[-6]) if len(kr_data) >= 6 else latest_price
+                        trend_5d = (latest_price - price_5d_ago) / price_5d_ago * 100
+                        recent20 = kr_data.tail(20)
+                        ohlcv_lines_kr = [
+                            f"{str(d)[:10]}: 종가={r['Close']:,.0f}, 거래량={int(r['Volume'])}"
+                            for d, r in recent20.iterrows()
+                        ]
+                        entry_prompt_kr = f"""한국 주식 {kr_name}({kr_ticker}) 매수 시점 분석을 요청합니다.
+
+[현재 데이터]
+현재가: ₩{latest_price:,.0f}
+5일 등락: {'+' if trend_5d >= 0 else ''}{trend_5d:.2f}%
+기간 고가: ₩{high_52:,.0f}  /  기간 저가: ₩{low_52:,.0f}
+
+[최근 20일 종가·거래량]
+{chr(10).join(ohlcv_lines_kr)}
+
+주식 왕초보를 위해 다음을 쉽게 설명해주세요:
+1. 지금 이 시점이 매수하기 좋은가, 나쁜가, 애매한가? (이유 포함)
+2. 만약 산다면 어느 가격대에서 손절할지 (구체적 가격 제시)
+3. 목표 익절가 시나리오 1~2개 (구체적 가격 제시)
+4. 초보자가 이 종목 살 때 특히 주의할 점
+주의: 이건 교육 목적 참고 의견이고 실제 투자 결정은 본인이 해야 한다고 꼭 언급해주세요."""
+                        entry_answer_kr = ai_analyze(entry_prompt_kr)
+                    st.markdown(f'<div class="strategy-box">{entry_answer_kr}</div>', unsafe_allow_html=True)
             else:
                 st.error(f"'{kr_ticker}' 데이터를 찾을 수 없어요. 종목 코드를 다시 확인해주세요.")
 
