@@ -529,19 +529,22 @@ elif page == "⭐ 관심 종목":
         color = TAG_COLORS.get(tag, "#607D8B")
         return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
 
+    @st.cache_data(ttl=86400)
+    def get_krx_name_map():
+        """KRX 전체 종목의 한글 이름 딕셔너리 반환 (하루 1회 캐시)"""
+        try:
+            df = fdr.StockListing('KRX')
+            return dict(zip(df['Code'].astype(str).str.zfill(6), df['Name']))
+        except:
+            return {}
+
     def auto_classify_with_name(ticker, market_tag):
         """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
         try:
             if market_tag == "KR":
-                # 한국: yfinance .KS로 이름 조회
-                try:
-                    kr_info = yf.Ticker(f"{ticker}.KS").info
-                    name = kr_info.get("longName") or kr_info.get("shortName", ticker)
-                    # 영문명이면 간단하게 정리
-                    if name and name != ticker:
-                        name = name.replace(" Co., Ltd.", "").replace(" Corp.", "").strip()
-                except:
-                    name = ticker
+                # 한국: KRX 리스트에서 한글 이름 조회
+                krx_map = get_krx_name_map()
+                name = krx_map.get(ticker.zfill(6), ticker)
 
                 kr_etf_codes = ["069500","229200","360750","133690","195930","148020","114800","252670","kodex","tiger","kbstar","hanaro"]
                 tag = "ETF" if any(k in ticker.lower() for k in kr_etf_codes) else "한국주식"
@@ -666,8 +669,9 @@ elif page == "⭐ 관심 종목":
             saved_name = item.get("name", "")
             flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
 
-            # 이름이 없거나 숫자 코드 그대로인 경우 자동으로 회사명 가져오기
-            if not saved_name or saved_name == ticker:
+            # 이름 없거나 코드 그대로이거나, 한국 종목인데 영문 이름인 경우 → 다시 가져오기
+            is_kr_english = (market_tag == "KR" and saved_name and saved_name.replace(" ","").isascii())
+            if not saved_name or saved_name == ticker or is_kr_english:
                 fetched_name, fetched_tag = auto_classify_with_name(ticker, market_tag)
                 saved_name = fetched_name
                 item["name"] = fetched_name
