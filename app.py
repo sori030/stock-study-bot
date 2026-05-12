@@ -510,15 +510,18 @@ elif page == "⭐ 관심 종목":
 
     if "watchlist" not in st.session_state:
         st.session_state.watchlist = load_watchlist(session_id)
+        # 기존 항목 중 tag 없는 것은 기타로 채움
+        for item in st.session_state.watchlist:
+            if "tag" not in item:
+                item["tag"] = "기타"
 
-    # 기본 태그 + 색상
-    DEFAULT_TAGS = ["ETF", "기술주", "배당주", "성장주", "한국주식", "직접입력"]
     TAG_COLORS = {
         "ETF":    "#4CAF50",
         "기술주":  "#2196F3",
         "배당주":  "#FF9800",
         "성장주":  "#9C27B0",
         "한국주식": "#F44336",
+        "개별주":  "#00BCD4",
         "기타":    "#607D8B",
     }
 
@@ -526,41 +529,63 @@ elif page == "⭐ 관심 종목":
         color = TAG_COLORS.get(tag, "#607D8B")
         return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
 
+    def auto_classify(ticker, market_tag):
+        """종목 정보를 가져와서 자동으로 태그 분류"""
+        try:
+            if market_tag == "KR":
+                # 한국 주식 — ETF 여부 판별 (ETF는 보통 숫자 6자리 + 이름에 ETF 포함)
+                kr_etf_codes = ["069500","229200","360750","133690","195930","148020","114800","252670","kodex","tiger","kbstar","hanaro"]
+                if any(k in ticker.lower() for k in kr_etf_codes):
+                    return "ETF"
+                return "한국주식"
+
+            # 미국 주식
+            info = yf.Ticker(ticker).info
+            quote_type = info.get("quoteType", "")
+            sector = info.get("sector", "")
+            div_yield = info.get("dividendYield") or 0
+
+            if quote_type == "ETF":
+                return "ETF"
+            if div_yield >= 0.03:
+                return "배당주"
+            if sector in ["Technology", "Communication Services"]:
+                return "기술주"
+            if sector in ["Consumer Cyclical", "Healthcare", "Industrials"]:
+                return "성장주"
+            return "개별주"
+        except:
+            return "기타"
+
     # ── 종목 추가 ──
     st.markdown("### ➕ 종목 추가")
-    col_add1, col_add2, col_add3, col_add4 = st.columns([2, 1, 1, 1])
+    st.caption("종목 코드만 입력하면 ETF·기술주·배당주 등 자동으로 분류돼요!")
+    col_add1, col_add2, col_add3 = st.columns([3, 1, 1])
     with col_add1:
-        new_ticker = st.text_input("종목 코드", placeholder="미국: AAPL / 한국: 005930", label_visibility="collapsed")
+        new_ticker = st.text_input("종목 코드", placeholder="미국: AAPL, SPY  /  한국: 005930, 069500", label_visibility="collapsed")
     with col_add2:
         market = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], label_visibility="collapsed")
     with col_add3:
-        tag_choice = st.selectbox("태그", DEFAULT_TAGS, label_visibility="collapsed")
-    with col_add4:
         if st.button("추가하기", use_container_width=True, type="primary"):
             if new_ticker:
                 ticker = new_ticker.upper().strip() if "미국" in market else new_ticker.strip()
                 market_tag = "US" if "미국" in market else "KR"
-                final_tag = tag_choice if tag_choice != "직접입력" else "기타"
-                entry = {
-                    "ticker": ticker,
-                    "market": market_tag,
-                    "tag": final_tag,
-                    "added": datetime.now().strftime("%Y-%m-%d")
-                }
                 existing = [w["ticker"] for w in st.session_state.watchlist]
                 if ticker not in existing:
+                    with st.spinner(f"{ticker} 분류 중..."):
+                        auto_tag = auto_classify(ticker, market_tag)
+                    entry = {
+                        "ticker": ticker,
+                        "market": market_tag,
+                        "tag": auto_tag,
+                        "added": datetime.now().strftime("%Y-%m-%d")
+                    }
                     st.session_state.watchlist.append(entry)
                     save_watchlist(session_id, st.session_state.watchlist)
-                    st.success(f"{ticker} 추가됐어요!")
+                    st.success(f"{ticker} 추가됐어요! 자동 분류: **{auto_tag}**")
                     st.rerun()
                 else:
                     st.warning("이미 추가된 종목이에요!")
-
-    # 직접 입력 태그
-    if tag_choice == "직접입력":
-        custom_tag = st.text_input("태그 직접 입력", placeholder="예: 내가 사고싶은 주식, 공부중")
-        if custom_tag:
-            st.session_state["custom_tag"] = custom_tag
 
     st.markdown("---")
 
