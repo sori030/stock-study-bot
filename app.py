@@ -645,6 +645,20 @@ elif page == "⭐ 관심 종목":
 
         st.markdown(f"### 📋 {selected_filter} ({len(filtered)}개)")
 
+        # 헤더 행
+        hcol1, hcol2, hcol3, hcol4, hcol5, hcol6 = st.columns([3, 1.2, 1.8, 1.8, 1.5, 1])
+        with hcol1:
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">종목명</span>', unsafe_allow_html=True)
+        with hcol2:
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">티커</span>', unsafe_allow_html=True)
+        with hcol3:
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">현재가</span>', unsafe_allow_html=True)
+        with hcol4:
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">등락률 (오늘)</span>', unsafe_allow_html=True)
+        with hcol5:
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">분류</span>', unsafe_allow_html=True)
+        st.markdown("<hr style='margin:4px 0 8px 0;border-color:#ddd'>", unsafe_allow_html=True)
+
         for i, item in enumerate(filtered):
             ticker = item["ticker"]
             market_tag = item["market"]
@@ -653,7 +667,7 @@ elif page == "⭐ 관심 종목":
             flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
 
             with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                col1, col2, col3, col4, col5, col6 = st.columns([3, 1.2, 1.8, 1.8, 1.5, 1])
 
                 try:
                     if market_tag == "US":
@@ -679,21 +693,22 @@ elif page == "⭐ 관심 종목":
 
                     with col1:
                         st.markdown(f"**{flag} {saved_name}**")
-                        st.caption(ticker)
-                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.markdown(f"### {price_str}")
+                        st.caption(ticker)
                     with col3:
+                        st.markdown(f"**{price_str}**")
+                    with col4:
                         arrow = "▲" if change_pct > 0 else "▼"
                         color_hex = "#e53935" if change_pct > 0 else "#1e88e5"
                         sign = "+" if change_pct > 0 else ""
                         st.markdown(
-                            f'<div style="font-size:1.1rem;font-weight:bold;color:{color_hex};margin-top:12px">'
+                            f'<div style="font-size:1rem;font-weight:bold;color:{color_hex};padding-top:4px">'
                             f'{arrow} {sign}{change_pct:.2f}%</div>',
                             unsafe_allow_html=True
                         )
-                    with col4:
-                        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+                    with col5:
+                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
+                    with col6:
                         if st.button("삭제", key=f"del_{ticker}_{i}"):
                             st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
                             save_watchlist(session_id, st.session_state.watchlist)
@@ -702,11 +717,13 @@ elif page == "⭐ 관심 종목":
                 except Exception:
                     with col1:
                         st.markdown(f"**{flag} {saved_name}**")
-                        st.caption(ticker)
-                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.caption("가격 불러오는 중...")
-                    with col4:
+                        st.caption(ticker)
+                    with col3:
+                        st.caption("불러오는 중...")
+                    with col5:
+                        st.markdown(tag_badge(tag), unsafe_allow_html=True)
+                    with col6:
                         if st.button("삭제", key=f"del_{ticker}_{i}"):
                             st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
                             save_watchlist(session_id, st.session_state.watchlist)
