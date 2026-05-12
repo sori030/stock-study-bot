@@ -531,18 +531,23 @@ elif page == "⭐ 관심 종목":
 
     @st.cache_data(ttl=86400)
     def get_krx_name_map():
-        """KOSPI + KOSDAQ 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
+        """KOSPI + KOSDAQ + ETF/KR 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
         name_map = {}
+        # 일반 주식: Code 컬럼
         for market in ['KOSPI', 'KOSDAQ']:
             try:
                 df = fdr.StockListing(market)
-                code_col = next((c for c in df.columns if c.lower() in ['code', 'symbol', '종목코드']), None)
-                name_col = next((c for c in df.columns if c.lower() in ['name', '종목명', '이름']), None)
-                if code_col and name_col:
-                    for code, name in zip(df[code_col].astype(str), df[name_col]):
-                        name_map[code.zfill(6)] = name
+                for code, name in zip(df['Code'].astype(str), df['Name']):
+                    name_map[code.zfill(6)] = name
             except:
                 pass
+        # ETF: Symbol 컬럼 (별도 리스팅)
+        try:
+            etf_df = fdr.StockListing('ETF/KR')
+            for code, name in zip(etf_df['Symbol'].astype(str), etf_df['Name']):
+                name_map[code.zfill(6)] = name
+        except:
+            pass
         return name_map
 
     def auto_classify_with_name(ticker, market_tag):
