@@ -984,13 +984,14 @@ PER: {info.get('trailingPE', 'N/A')}
                 kr_data = get_kr_stock(kr_ticker)
 
             if kr_data is not None and len(kr_data) > 1:
+                kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
                 latest_price = float(kr_data["Close"].iloc[-1])
                 prev_price = float(kr_data["Close"].iloc[-2])
                 change_pct = (latest_price - prev_price) / prev_price * 100
                 high_52 = float(kr_data["Close"].max())
                 low_52 = float(kr_data["Close"].min())
 
-                st.markdown(f"#### 종목 코드: {kr_ticker}")
+                st.markdown(f"#### {kr_name} ({kr_ticker})")
                 m1, m2, m3 = st.columns(3)
                 m1.metric("현재가", f"₩{latest_price:,.0f}", f"{'+' if change_pct>0 else ''}{change_pct:.2f}%")
                 m2.metric("3개월 최고", f"₩{high_52:,.0f}")
@@ -999,7 +1000,6 @@ PER: {info.get('trailingPE', 'N/A')}
                 fig = make_candle_chart(kr_data, title=f"{kr_name} 최근 3개월", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
 
-                kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
                     if st.button("🤖 AI가 이 종목 쉽게 설명해줘", key="kr_explain", use_container_width=True):
