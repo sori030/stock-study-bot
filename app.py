@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import os
 import json
+import uuid
 import feedparser
 import requests
 import re
@@ -42,36 +43,53 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── 대화 저장 파일 경로 ────────────────────────────────────────
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "chat_history.json")
+# ── 세션 ID 기반 대화 저장 ────────────────────────────────────
+HISTORY_DIR = os.path.join(os.path.dirname(__file__), "histories")
+os.makedirs(HISTORY_DIR, exist_ok=True)
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
+def get_session_id():
+    """브라우저별 고유 ID를 URL 파라미터로 관리"""
+    params = st.query_params
+    if "sid" not in params:
+        new_id = str(uuid.uuid4())[:8]
+        st.query_params["sid"] = new_id
+        return new_id
+    return params["sid"]
+
+def get_history_file(session_id):
+    return os.path.join(HISTORY_DIR, f"chat_{session_id}.json")
+
+def load_history(session_id):
+    path = get_history_file(session_id)
+    if os.path.exists(path):
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return []
     return []
 
-def save_history(messages):
+def save_history(session_id, messages):
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        with open(get_history_file(session_id), "w", encoding="utf-8") as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
-def clear_history():
-    if os.path.exists(HISTORY_FILE):
-        os.remove(HISTORY_FILE)
+def clear_history(session_id):
+    path = get_history_file(session_id)
+    if os.path.exists(path):
+        os.remove(path)
 
 def build_gemini_history(messages):
-    """저장된 메시지를 Gemini 세션용 형식으로 변환"""
     history = []
     for msg in messages:
         role = "user" if msg["role"] == "user" else "model"
         history.append({"role": role, "parts": [{"text": msg["content"]}]})
     return history
+
+# ── 세션 ID 초기화 ───────────────────────────────────────────
+session_id = get_session_id()
 
 # ── API 키 설정 ──────────────────────────────────────────────
 try:
@@ -98,16 +116,16 @@ with st.sidebar:
     st.markdown("---")
 
     # 대화 내역 요약
-    saved = load_history()
+    saved = load_history(session_id)
     if saved:
         total = len(saved)
         last_time = saved[-1].get("timestamp", "")
-        st.markdown("#### 💾 저장된 대화")
+        st.markdown("#### 💾 나의 대화 내역")
         st.caption(f"총 {total}개 메시지")
         if last_time:
             st.caption(f"마지막: {last_time[:16]}")
     else:
-        st.markdown("#### 💾 저장된 대화")
+        st.markdown("#### 💾 나의 대화 내역")
         st.caption("아직 대화 내역이 없어요")
 
     st.markdown("---")
@@ -145,14 +163,13 @@ SYSTEM_PROMPT = """당신은 '주식 왕초보'를 위한 친절한 경제·주�
 """
 
 if "messages" not in st.session_state:
-    st.session_state.messages = load_history()
+    st.session_state.messages = load_history(session_id)
 
 if "chat_session" not in st.session_state:
     model = genai.GenerativeModel(
         model_name="gemini-2.5-flash-lite",
         system_instruction=SYSTEM_PROMPT
     )
-    # 저장된 대화가 있으면 Gemini 세션에 이어받기
     gemini_history = build_gemini_history(st.session_state.messages)
     st.session_state.chat_session = model.start_chat(history=gemini_history)
 
@@ -202,14 +219,13 @@ def get_index_data():
     return result
 
 def add_message(role, content):
-    """메시지를 세션과 파일에 동시에 저장"""
     msg = {
         "role": role,
         "content": content,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     st.session_state.messages.append(msg)
-    save_history(st.session_state.messages)
+    save_history(session_id, st.session_state.messages)
 
 def ai_analyze(prompt):
     try:
@@ -249,7 +265,7 @@ if page == "📚 공부방":
         st.markdown("---")
         if st.button("🗑️ 대화 내역 전체 삭제", use_container_width=True):
             st.session_state.messages = []
-            clear_history()
+            clear_history(session_id)
             model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=SYSTEM_PROMPT)
             st.session_state.chat_session = model.start_chat(history=[])
             st.rerun()
