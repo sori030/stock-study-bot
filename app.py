@@ -361,11 +361,18 @@ elif page == "📰 경제 뉴스":
         except:
             return []
 
+    US_NEWS_FEEDS = {
+        "📈 시장 전체": "https://www.cnbc.com/id/15839069/device/rss/rss.html",
+        "💰 경제 지표": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+        "🏦 금융/투자": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+        "⚡ 실시간 헤드라인": "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines",
+    }
+
     @st.cache_data(ttl=1800)
-    def get_yahoo_news():
+    def get_us_news(feed_url):
         try:
-            feed = feedparser.parse("https://feeds.finance.yahoo.com/rss/2.0/headline?region=US&lang=en-US")
-            return feed.entries[:6]
+            feed = feedparser.parse(feed_url)
+            return feed.entries[:8]
         except:
             return []
 
@@ -375,7 +382,7 @@ elif page == "📰 경제 뉴스":
 
     if st.button("📋 오늘 꼭 알아야 할 경제 뉴스 요약해줘!", use_container_width=True, type="primary"):
         kr_news = get_naver_news("경제 주식 금리", display=5)
-        us_news = get_yahoo_news()
+        us_news = get_us_news(list(US_NEWS_FEEDS.values())[0])
 
         kr_titles = "\n".join([f"- {n['title']}" for n in kr_news[:5]]) if kr_news else "뉴스를 불러올 수 없습니다"
         us_titles = "\n".join([f"- {e.get('title','')}" for e in us_news[:5]]) if us_news else "뉴스를 불러올 수 없습니다"
@@ -453,27 +460,46 @@ elif page == "📰 경제 뉴스":
                 st.info("뉴스를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
 
     with tab_us:
+        # 카테고리 선택
+        selected_feed_name = st.radio(
+            "카테고리",
+            list(US_NEWS_FEEDS.keys()),
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+        feed_url = US_NEWS_FEEDS[selected_feed_name]
+
         with st.spinner("미국 뉴스 불러오는 중..."):
-            us_entries = get_yahoo_news()
+            us_entries = get_us_news(feed_url)
 
         if us_entries:
+            st.caption(f"출처: CNBC / MarketWatch | {selected_feed_name} | 30분마다 업데이트")
             for entry in us_entries:
                 title = entry.get("title", "")
-                summary = entry.get("summary", "")
+                summary = entry.get("summary", "") or entry.get("description", "")
                 link = entry.get("link", "#")
-                published = entry.get("published", "")[:25] if entry.get("published") else ""
+                published = entry.get("published", "")[:16] if entry.get("published") else ""
+
+                # HTML 태그 제거
+                summary_clean = re.sub(r"<[^>]+>", "", summary)
 
                 with st.expander(f"📄 {title}"):
-                    st.caption(published)
-                    st.write(summary[:200] + "..." if len(summary) > 200 else summary)
-                    col_a, col_b = st.columns([1, 3])
+                    if published:
+                        st.caption(f"🕐 {published}")
+                    if summary_clean:
+                        st.write(summary_clean[:300] + "..." if len(summary_clean) > 300 else summary_clean)
+
+                    col_a, col_b = st.columns([2, 3])
                     with col_a:
-                        if st.button("🤖 한국어로 쉽게 설명해줘", key=f"us_news_{title[:20]}"):
+                        if st.button("🤖 한국어로 쉽게 설명해줘", key=f"us_news_{title[:25]}"):
                             with st.spinner("번역 & 설명 중..."):
-                                answer = ai_analyze(f"다음 미국 경제 뉴스를 한국어로 번역하고 주식 왕초보에게 쉽게 설명해주세요:\n제목: {title}\n내용: {summary}")
+                                answer = ai_analyze(
+                                    f"다음 미국 경제 뉴스를 한국어로 번역하고 주식 왕초보에게 쉽게 설명해주세요:\n"
+                                    f"제목: {title}\n내용: {summary_clean[:500]}"
+                                )
                             st.info(answer)
                     with col_b:
-                        st.markdown(f"[원문 보기]({link})")
+                        st.markdown(f"[📰 원문 보기 (영어)]({link})")
         else:
             st.info("미국 뉴스를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
 
