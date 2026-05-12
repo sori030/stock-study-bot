@@ -582,6 +582,28 @@ elif page == "📰 경제 뉴스":
         except:
             return []
 
+    @st.cache_data(ttl=1800)
+    def translate_titles_batch(titles_tuple):
+        """뉴스 제목 목록을 한번에 번역 (30분 캐시, API 1회 호출)"""
+        try:
+            titles_text = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles_tuple)])
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            response = model.generate_content(
+                f"다음 미국 경제 뉴스 제목들을 자연스러운 한국어로 번역해주세요.\n"
+                f"번호와 번역만 출력하고 다른 설명은 없이 딱 이 형식으로만:\n"
+                f"1. 번역된 제목\n2. 번역된 제목\n\n{titles_text}"
+            )
+            result = {}
+            for line in response.text.strip().split("\n"):
+                m = re.match(r"(\d+)\.\s+(.+)", line.strip())
+                if m:
+                    idx = int(m.group(1)) - 1
+                    if idx < len(titles_tuple):
+                        result[titles_tuple[idx]] = m.group(2).strip()
+            return result
+        except:
+            return {}
+
     # AI 뉴스 브리핑 버튼
     st.markdown("### 🤖 오늘의 AI 경제 브리핑")
     st.caption("최신 뉴스를 AI가 왕초보 언어로 요약해드려요")
@@ -680,8 +702,15 @@ elif page == "📰 경제 뉴스":
 
         if us_entries:
             st.caption(f"출처: CNBC / MarketWatch | {selected_feed_name} | 30분마다 업데이트")
+
+            # 제목 전체를 한번에 번역 (캐시됨)
+            all_titles = tuple(e.get("title", "") for e in us_entries)
+            with st.spinner("제목 번역 중..."):
+                translations = translate_titles_batch(all_titles)
+
             for entry in us_entries:
                 title = entry.get("title", "")
+                kr_title = translations.get(title, "")
                 summary = entry.get("summary", "") or entry.get("description", "")
                 link = entry.get("link", "#")
                 published = entry.get("published", "")[:16] if entry.get("published") else ""
@@ -690,6 +719,13 @@ elif page == "📰 경제 뉴스":
                 summary_clean = re.sub(r"<[^>]+>", "", summary)
 
                 with st.expander(f"📄 {title}"):
+                    if kr_title:
+                        st.markdown(
+                            f'<div style="background:#f0f7ff;border-left:3px solid #1f77b4;'
+                            f'padding:8px 12px;border-radius:4px;margin-bottom:8px;'
+                            f'font-size:0.95rem;font-weight:bold;color:#1a3a5c">🇰🇷 {kr_title}</div>',
+                            unsafe_allow_html=True
+                        )
                     if published:
                         st.caption(f"🕐 {published}")
                     if summary_clean:
