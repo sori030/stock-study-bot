@@ -650,7 +650,7 @@ elif page == "⭐ 관심 종목":
         with hcol1:
             st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">종목명</span>', unsafe_allow_html=True)
         with hcol2:
-            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">티커</span>', unsafe_allow_html=True)
+            st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">종목코드</span>', unsafe_allow_html=True)
         with hcol3:
             st.markdown('<span style="font-size:0.8rem;color:#888;font-weight:bold">현재가</span>', unsafe_allow_html=True)
         with hcol4:
@@ -663,8 +663,18 @@ elif page == "⭐ 관심 종목":
             ticker = item["ticker"]
             market_tag = item["market"]
             tag = item.get("tag", "기타")
-            saved_name = item.get("name", ticker)
+            saved_name = item.get("name", "")
             flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
+
+            # 이름이 없거나 숫자 코드 그대로인 경우 자동으로 회사명 가져오기
+            if not saved_name or saved_name == ticker:
+                fetched_name, fetched_tag = auto_classify_with_name(ticker, market_tag)
+                saved_name = fetched_name
+                item["name"] = fetched_name
+                if tag == "기타":
+                    item["tag"] = fetched_tag
+                    tag = fetched_tag
+                save_watchlist(session_id, st.session_state.watchlist)
 
             with st.container():
                 col1, col2, col3, col4, col5, col6 = st.columns([3, 1.2, 1.8, 1.8, 1.5, 1])
