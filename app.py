@@ -529,33 +529,44 @@ elif page == "⭐ 관심 종목":
         color = TAG_COLORS.get(tag, "#607D8B")
         return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
 
-    def auto_classify(ticker, market_tag):
-        """종목 정보를 가져와서 자동으로 태그 분류"""
+    def auto_classify_with_name(ticker, market_tag):
+        """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
         try:
             if market_tag == "KR":
-                # 한국 주식 — ETF 여부 판별 (ETF는 보통 숫자 6자리 + 이름에 ETF 포함)
+                # 한국: yfinance .KS로 이름 조회
+                try:
+                    kr_info = yf.Ticker(f"{ticker}.KS").info
+                    name = kr_info.get("longName") or kr_info.get("shortName", ticker)
+                    # 영문명이면 간단하게 정리
+                    if name and name != ticker:
+                        name = name.replace(" Co., Ltd.", "").replace(" Corp.", "").strip()
+                except:
+                    name = ticker
+
                 kr_etf_codes = ["069500","229200","360750","133690","195930","148020","114800","252670","kodex","tiger","kbstar","hanaro"]
-                if any(k in ticker.lower() for k in kr_etf_codes):
-                    return "ETF"
-                return "한국주식"
+                tag = "ETF" if any(k in ticker.lower() for k in kr_etf_codes) else "한국주식"
+                return name, tag
 
             # 미국 주식
             info = yf.Ticker(ticker).info
+            name = info.get("shortName") or info.get("longName") or ticker
             quote_type = info.get("quoteType", "")
             sector = info.get("sector", "")
             div_yield = info.get("dividendYield") or 0
 
             if quote_type == "ETF":
-                return "ETF"
-            if div_yield >= 0.03:
-                return "배당주"
-            if sector in ["Technology", "Communication Services"]:
-                return "기술주"
-            if sector in ["Consumer Cyclical", "Healthcare", "Industrials"]:
-                return "성장주"
-            return "개별주"
+                tag = "ETF"
+            elif div_yield >= 0.03:
+                tag = "배당주"
+            elif sector in ["Technology", "Communication Services"]:
+                tag = "기술주"
+            elif sector in ["Consumer Cyclical", "Healthcare", "Industrials"]:
+                tag = "성장주"
+            else:
+                tag = "개별주"
+            return name, tag
         except:
-            return "기타"
+            return ticker, "기타"
 
     # ── 종목 추가 ──
     st.markdown("### ➕ 종목 추가")
@@ -572,17 +583,18 @@ elif page == "⭐ 관심 종목":
                 market_tag = "US" if "미국" in market else "KR"
                 existing = [w["ticker"] for w in st.session_state.watchlist]
                 if ticker not in existing:
-                    with st.spinner(f"{ticker} 분류 중..."):
-                        auto_tag = auto_classify(ticker, market_tag)
+                    with st.spinner(f"{ticker} 정보 가져오는 중..."):
+                        stock_name, auto_tag = auto_classify_with_name(ticker, market_tag)
                     entry = {
                         "ticker": ticker,
+                        "name": stock_name,
                         "market": market_tag,
                         "tag": auto_tag,
                         "added": datetime.now().strftime("%Y-%m-%d")
                     }
                     st.session_state.watchlist.append(entry)
                     save_watchlist(session_id, st.session_state.watchlist)
-                    st.success(f"{ticker} 추가됐어요! 자동 분류: **{auto_tag}**")
+                    st.success(f"**{stock_name}** 추가됐어요! 자동 분류: **{auto_tag}**")
                     st.rerun()
                 else:
                     st.warning("이미 추가된 종목이에요!")
@@ -637,9 +649,11 @@ elif page == "⭐ 관심 종목":
             ticker = item["ticker"]
             market_tag = item["market"]
             tag = item.get("tag", "기타")
+            saved_name = item.get("name", ticker)
+            flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
 
             with st.container():
-                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
 
                 try:
                     if market_tag == "US":
@@ -648,9 +662,7 @@ elif page == "⭐ 관심 종목":
                             price = info.get("currentPrice") or info.get("regularMarketPrice") or float(hist["Close"].iloc[-1])
                             prev = info.get("previousClose", float(hist["Close"].iloc[-2]) if len(hist) > 1 else price)
                             change_pct = (price - prev) / prev * 100
-                            name = info.get("shortName", ticker)
                             price_str = f"${price:,.2f}"
-                            flag = "🇺🇸"
                         else:
                             raise Exception()
                     else:
@@ -661,24 +673,27 @@ elif page == "⭐ 관심 종목":
                             price = float(kr_data["Close"].iloc[-1])
                             prev = float(kr_data["Close"].iloc[-2])
                             change_pct = (price - prev) / prev * 100
-                            name = ticker
                             price_str = f"₩{price:,.0f}"
-                            flag = "🇰🇷"
                         else:
                             raise Exception()
 
                     with col1:
-                        st.markdown(f"**{flag} {ticker}**")
+                        st.markdown(f"**{flag} {saved_name}**")
+                        st.caption(ticker)
                         st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.caption(name[:18] if len(name) > 18 else name)
+                        st.markdown(f"### {price_str}")
                     with col3:
-                        st.markdown(f"**{price_str}**")
-                    with col4:
-                        color = "🔴" if change_pct > 0 else "🔵"
+                        arrow = "▲" if change_pct > 0 else "▼"
+                        color_hex = "#e53935" if change_pct > 0 else "#1e88e5"
                         sign = "+" if change_pct > 0 else ""
-                        st.markdown(f"{color} {sign}{change_pct:.2f}%")
-                    with col5:
+                        st.markdown(
+                            f'<div style="font-size:1.1rem;font-weight:bold;color:{color_hex};margin-top:12px">'
+                            f'{arrow} {sign}{change_pct:.2f}%</div>',
+                            unsafe_allow_html=True
+                        )
+                    with col4:
+                        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
                         if st.button("삭제", key=f"del_{ticker}_{i}"):
                             st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
                             save_watchlist(session_id, st.session_state.watchlist)
@@ -686,11 +701,12 @@ elif page == "⭐ 관심 종목":
 
                 except Exception:
                     with col1:
-                        st.markdown(f"**{'🇺🇸' if market_tag == 'US' else '🇰🇷'} {ticker}**")
+                        st.markdown(f"**{flag} {saved_name}**")
+                        st.caption(ticker)
                         st.markdown(tag_badge(tag), unsafe_allow_html=True)
                     with col2:
-                        st.caption("데이터 불러오는 중...")
-                    with col5:
+                        st.caption("가격 불러오는 중...")
+                    with col4:
                         if st.button("삭제", key=f"del_{ticker}_{i}"):
                             st.session_state.watchlist = [w for w in st.session_state.watchlist if w["ticker"] != ticker]
                             save_watchlist(session_id, st.session_state.watchlist)
