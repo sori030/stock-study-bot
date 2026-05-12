@@ -1517,70 +1517,132 @@ elif page == "📓 투자 일지":
             st.markdown(f'<div class="strategy-box">{analysis}</div>', unsafe_allow_html=True)
 
         st.markdown("---")
-
-        # ── 거래 내역 테이블 ──
         st.markdown("### 📋 거래 내역")
 
-        # 종목별 필터
-        tickers_in_journal = ["전체"] + list(dict.fromkeys(t["ticker"] for t in st.session_state.journal))
-        filter_ticker = st.selectbox("종목 필터", tickers_in_journal, label_visibility="collapsed")
-        filtered_journal = st.session_state.journal if filter_ticker == "전체" \
-            else [t for t in st.session_state.journal if t["ticker"] == filter_ticker]
+        tab_all, tab_grouped = st.tabs(["📄 전체 내역", "📦 종목별 묶음"])
 
-        # 헤더
-        hj1, hj2, hj3, hj4, hj5, hj6, hj7 = st.columns([1.2, 2, 1, 1.5, 1.2, 2, 0.8])
-        for col, label in zip([hj1,hj2,hj3,hj4,hj5,hj6,hj7],
-                               ["날짜","종목","구분","가격","수량","메모",""]):
-            col.markdown(f'<span style="font-size:0.78rem;color:#888;font-weight:bold">{label}</span>',
-                        unsafe_allow_html=True)
-        st.markdown("<hr style='margin:4px 0 8px 0;border-color:#ddd'>", unsafe_allow_html=True)
+        # ══ 전체 내역 탭 ══════════════════════════════════════
+        with tab_all:
+            if "editing_id" not in st.session_state:
+                st.session_state.editing_id = None
 
-        for idx, trade in enumerate(filtered_journal):
-            flag = "🇰🇷" if trade["market"] == "KR" else "🇺🇸"
-            currency = "₩" if trade["market"] == "KR" else "$"
-            type_color = "#e53935" if trade["type"] == "매수" else "#1565c0"
+            hj1,hj2,hj3,hj4,hj5,hj6,hj7 = st.columns([1.2,2,1,1.5,1,2,1.2])
+            for col, label in zip([hj1,hj2,hj3,hj4,hj5,hj6,hj7],
+                                   ["날짜","종목","구분","가격","수량","메모",""]):
+                col.markdown(f'<span style="font-size:0.78rem;color:#888;font-weight:bold">{label}</span>',
+                             unsafe_allow_html=True)
+            st.markdown("<hr style='margin:4px 0 8px 0;border-color:#ddd'>", unsafe_allow_html=True)
 
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([1.2, 2, 1, 1.5, 1.2, 2, 0.8])
-            c1.caption(trade["date"])
-            c2.markdown(f"**{flag} {trade['name']}**")
-            c3.markdown(f'<span style="color:{type_color};font-weight:bold">{trade["type"]}</span>',
-                       unsafe_allow_html=True)
-            c4.markdown(f"`{currency}{trade['price']:,.2f}`")
-            c5.caption(f"{trade['quantity']}주")
-            c6.caption(trade["memo"] or "-")
-            with c7:
-                if st.button("삭제", key=f"del_journal_{idx}"):
-                    st.session_state.journal = [t for t in st.session_state.journal
-                                                if t["id"] != trade["id"]]
-                    save_journal(session_id, st.session_state.journal)
-                    st.rerun()
+            for idx, trade in enumerate(st.session_state.journal):
+                flag = "🇰🇷" if trade["market"] == "KR" else "🇺🇸"
+                currency = "₩" if trade["market"] == "KR" else "$"
+                type_color = "#e53935" if trade["type"] == "매수" else "#1565c0"
+                tid = trade["id"]
 
-        # 종목별 손익 계산 (매수+매도 둘 다 있는 경우)
-        tickers_with_both = set(
-            t["ticker"] for t in st.session_state.journal if t["type"] == "매수"
-        ) & set(
-            t["ticker"] for t in st.session_state.journal if t["type"] == "매도"
-        )
-        if tickers_with_both:
-            st.markdown("---")
-            st.markdown("### 💰 종목별 손익")
-            for tk in tickers_with_both:
-                buys = [t for t in st.session_state.journal if t["ticker"] == tk and t["type"] == "매수"]
-                sells = [t for t in st.session_state.journal if t["ticker"] == tk and t["type"] == "매도"]
-                avg_buy = sum(t["price"] * t["quantity"] for t in buys) / sum(t["quantity"] for t in buys)
-                avg_sell = sum(t["price"] * t["quantity"] for t in sells) / sum(t["quantity"] for t in sells)
-                sell_qty = sum(t["quantity"] for t in sells)
-                pnl = (avg_sell - avg_buy) * sell_qty
-                pnl_pct = (avg_sell - avg_buy) / avg_buy * 100
-                currency = "₩" if buys[0]["market"] == "KR" else "$"
-                color = "#e53935" if pnl >= 0 else "#1565c0"
-                sign = "+" if pnl >= 0 else ""
-                name = buys[0]["name"]
-                st.markdown(
-                    f'**{name}({tk})** — 평균 매수 {currency}{avg_buy:,.2f} → 평균 매도 {currency}{avg_sell:,.2f} | '
-                    f'<span style="color:{color};font-weight:bold">{sign}{pnl_pct:.2f}% ({sign}{currency}{abs(pnl):,.0f})</span>',
-                    unsafe_allow_html=True
+                # ── 수정 모드
+                if st.session_state.editing_id == tid:
+                    with st.form(key=f"edit_form_{tid}"):
+                        ec1, ec2, ec3 = st.columns([2, 1, 1])
+                        with ec1:
+                            e_date = st.date_input("거래일", value=datetime.strptime(trade["date"], "%Y-%m-%d"))
+                        with ec2:
+                            e_price = st.number_input("가격", value=float(trade["price"]), min_value=0.0, step=0.01, format="%.2f")
+                        with ec3:
+                            e_qty = st.number_input("수량", value=int(trade["quantity"]), min_value=1, step=1)
+                        e_type = st.selectbox("구분", ["매수", "매도"], index=0 if trade["type"] == "매수" else 1)
+                        e_memo = st.text_input("메모", value=trade.get("memo", ""))
+                        save_col, cancel_col = st.columns(2)
+                        with save_col:
+                            save_btn = st.form_submit_button("💾 저장", use_container_width=True, type="primary")
+                        with cancel_col:
+                            cancel_btn = st.form_submit_button("취소", use_container_width=True)
+
+                    if save_btn:
+                        for t in st.session_state.journal:
+                            if t["id"] == tid:
+                                t["date"] = str(e_date)
+                                t["price"] = e_price
+                                t["quantity"] = int(e_qty)
+                                t["amount"] = round(e_price * e_qty, 2)
+                                t["type"] = e_type
+                                t["memo"] = e_memo
+                        save_journal(session_id, st.session_state.journal)
+                        st.session_state.editing_id = None
+                        st.rerun()
+                    if cancel_btn:
+                        st.session_state.editing_id = None
+                        st.rerun()
+
+                else:
+                    c1,c2,c3,c4,c5,c6,c7 = st.columns([1.2,2,1,1.5,1,2,1.2])
+                    c1.caption(trade["date"])
+                    c2.markdown(f"**{flag} {trade['name']}**")
+                    c3.markdown(f'<span style="color:{type_color};font-weight:bold">{trade["type"]}</span>', unsafe_allow_html=True)
+                    c4.markdown(f"`{currency}{trade['price']:,.2f}`")
+                    c5.caption(f"{trade['quantity']}주")
+                    c6.caption(trade.get("memo") or "-")
+                    with c7:
+                        btn_c1, btn_c2 = st.columns(2)
+                        with btn_c1:
+                            if st.button("수정", key=f"edit_{tid}_{idx}", use_container_width=True):
+                                st.session_state.editing_id = tid
+                                st.rerun()
+                        with btn_c2:
+                            if st.button("삭제", key=f"del_{tid}_{idx}", use_container_width=True):
+                                st.session_state.journal = [t for t in st.session_state.journal if t["id"] != tid]
+                                save_journal(session_id, st.session_state.journal)
+                                st.rerun()
+
+        # ══ 종목별 묶음 탭 ════════════════════════════════════
+        with tab_grouped:
+            # 종목별 그룹화
+            ticker_order = list(dict.fromkeys(t["ticker"] for t in st.session_state.journal))
+            for tk in ticker_order:
+                tk_trades = [t for t in st.session_state.journal if t["ticker"] == tk]
+                buys = [t for t in tk_trades if t["type"] == "매수"]
+                sells = [t for t in tk_trades if t["type"] == "매도"]
+                flag = "🇰🇷" if tk_trades[0]["market"] == "KR" else "🇺🇸"
+                currency = "₩" if tk_trades[0]["market"] == "KR" else "$"
+                name = tk_trades[0]["name"]
+
+                total_buy_qty = sum(t["quantity"] for t in buys)
+                total_sell_qty = sum(t["quantity"] for t in sells)
+                avg_buy = (sum(t["price"] * t["quantity"] for t in buys) / total_buy_qty) if buys else 0
+                avg_sell = (sum(t["price"] * t["quantity"] for t in sells) / total_sell_qty) if sells else 0
+                total_invested = sum(t["amount"] for t in buys)
+
+                # 손익 (매도 있을 때)
+                pnl_str = ""
+                if sells and buys:
+                    pnl = (avg_sell - avg_buy) * total_sell_qty
+                    pnl_pct = (avg_sell - avg_buy) / avg_buy * 100
+                    color = "#e53935" if pnl >= 0 else "#1565c0"
+                    sign = "+" if pnl >= 0 else ""
+                    pnl_str = f' | <span style="color:{color};font-weight:bold">{sign}{pnl_pct:.2f}% ({sign}{currency}{abs(pnl):,.2f})</span>'
+
+                label = (
+                    f"{flag} **{name}** ({tk}) &nbsp;|&nbsp; "
+                    f"매수 {len(buys)}회 · 평균 {currency}{avg_buy:,.2f} · {total_buy_qty}주"
+                    + (f" &nbsp;|&nbsp; 매도 {len(sells)}회 · {total_sell_qty}주" if sells else "")
+                    + pnl_str
                 )
+                with st.expander(label, expanded=False):
+                    sub1, sub2, sub3 = st.columns([1.5, 1.5, 1.5])
+                    sub1.metric("평균 매수가", f"{currency}{avg_buy:,.2f}")
+                    sub2.metric("총 매수금액", f"{currency}{total_invested:,.2f}")
+                    sub3.metric("보유 수량", f"{total_buy_qty - total_sell_qty}주")
+
+                    st.markdown("**거래 상세**")
+                    for t in sorted(tk_trades, key=lambda x: x["date"]):
+                        ttype_color = "#e53935" if t["type"] == "매수" else "#1565c0"
+                        memo_str = f" — {t['memo']}" if t.get("memo") else ""
+                        st.markdown(
+                            f"- {t['date']} &nbsp; "
+                            f'<span style="color:{ttype_color};font-weight:bold">{t["type"]}</span>'
+                            f" &nbsp; {currency}{t['price']:,.2f} × {t['quantity']}주"
+                            f" = {currency}{t['amount']:,.2f}{memo_str}",
+                            unsafe_allow_html=True
+                        )
 
 # ── 페이지 3: 나만의 전략 ─────────────────────────────────────
 elif page == "🎯 나만의 전략":
