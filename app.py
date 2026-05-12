@@ -411,6 +411,134 @@ def make_candle_chart(df, title="", currency="KRW", height=420):
     )
     return fig
 
+def detect_candle_patterns(df):
+    """최근 20일 캔들에서 기본 패턴 감지 → Plotly annotation 리스트 반환"""
+    annotations = []
+    n = min(20, len(df))
+    subset = df.tail(n)
+    closes = subset["Close"].values
+    opens  = subset["Open"].values
+    highs  = subset["High"].values
+    lows   = subset["Low"].values
+    dates  = list(subset.index)
+
+    for i in range(len(subset)):
+        o, h, l, c = float(opens[i]), float(highs[i]), float(lows[i]), float(closes[i])
+        body = abs(c - o)
+        rng  = h - l
+        if rng < 0.0001:
+            continue
+        upper_wick = h - max(o, c)
+        lower_wick = min(o, c) - l
+        pattern = None
+
+        if body / rng < 0.08:                                        # 도지
+            pattern = ("도지", "#FFD700")
+        elif lower_wick >= 2 * body and upper_wick <= body * 0.4:   # 망치형
+            pattern = ("망치형", "#76FF03")
+        elif upper_wick >= 2 * body and lower_wick <= body * 0.4:   # 역망치형
+            pattern = ("역망치형", "#FF9800")
+        elif (i > 0 and c > opens[i-1] and o < closes[i-1]         # 상승장악형
+              and closes[i-1] < opens[i-1]):
+            pattern = ("상승장악형", "#E91E63")
+
+        if pattern:
+            label, color = pattern
+            annotations.append(dict(
+                x=dates[i], y=h * 1.006,
+                text=f"<b>{label}</b>",
+                showarrow=True, arrowhead=2, arrowsize=0.8,
+                arrowcolor=color,
+                font=dict(size=10, color=color),
+                bgcolor="rgba(14,17,23,0.85)",
+                bordercolor=color, borderwidth=1,
+                ax=0, ay=-28,
+                xref="x", yref="y",
+            ))
+    return annotations
+
+def make_annotated_chart(df, title="", currency="KRW", height=520):
+    """MA5/MA20 + 지지·저항선 + 캔들 패턴 라벨이 포함된 분석용 차트"""
+    up_color   = "#e53935"
+    down_color = "#1565c0"
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.72, 0.28],
+        vertical_spacing=0.03
+    )
+
+    # 캔들스틱
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"], high=df["High"],
+        low=df["Low"],   close=df["Close"],
+        increasing=dict(line=dict(color=up_color), fillcolor=up_color),
+        decreasing=dict(line=dict(color=down_color), fillcolor=down_color),
+        name="주가", showlegend=False,
+    ), row=1, col=1)
+
+    # MA5 (주황)
+    if len(df) >= 5:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["Close"].rolling(5).mean(),
+            line=dict(color="#FF9800", width=1.6),
+            name="MA5",
+        ), row=1, col=1)
+
+    # MA20 (보라)
+    if len(df) >= 20:
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["Close"].rolling(20).mean(),
+            line=dict(color="#CE93D8", width=1.6),
+            name="MA20",
+        ), row=1, col=1)
+
+    # 지지선·저항선 (전체 기간 기준)
+    support = float(df["Low"].min())
+    resist  = float(df["High"].max())
+    x0, x1  = df.index[0], df.index[-1]
+
+    for level, color, label in [
+        (support, "#42A5F5", f"📌 지지선 ({support:,.2f})"),
+        (resist,  "#EF5350", f"📌 저항선 ({resist:,.2f})"),
+    ]:
+        fig.add_shape(type="line", x0=x0, x1=x1, y0=level, y1=level,
+                      line=dict(color=color, width=1.4, dash="dot"), row=1, col=1)
+        fig.add_annotation(x=x0, y=level, text=label, showarrow=False,
+                           font=dict(color=color, size=10), xanchor="left",
+                           yanchor="bottom", row=1, col=1)
+
+    # 캔들 패턴 라벨
+    for ann in detect_candle_patterns(df):
+        fig.add_annotation(**ann)
+
+    # 거래량
+    vol_colors = [up_color if float(c) >= float(o) else down_color
+                  for c, o in zip(df["Close"], df["Open"])]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df["Volume"],
+        marker_color=vol_colors, opacity=0.75,
+        name="거래량", showlegend=False,
+    ), row=2, col=1)
+
+    y_label = "USD" if currency == "USD" else "원"
+    fig.update_layout(
+        title=dict(text=f"{title}  📊 분석 뷰", font=dict(size=13)),
+        xaxis_rangeslider_visible=False,
+        height=height,
+        margin=dict(t=50, b=10, l=0, r=0),
+        plot_bgcolor="#0e1117",
+        paper_bgcolor="#0e1117",
+        font=dict(color="#fafafa"),
+        xaxis2=dict(showgrid=False),
+        xaxis=dict(showgrid=True, gridcolor="#2a2a2a"),
+        yaxis=dict(title=y_label, showgrid=True, gridcolor="#2a2a2a"),
+        yaxis2=dict(title="거래량", showgrid=False),
+        legend=dict(orientation="h", y=1.06, x=0, bgcolor="rgba(0,0,0,0)"),
+    )
+    return fig
+
 def show_chart_tip():
     """캔들차트 읽는 법 팁 (expander)"""
     with st.expander("💡 차트 읽는 법 (처음이라면 클릭!)"):
@@ -1324,9 +1452,24 @@ elif page == "📊 주식 정보":
                 m3.metric("52주 최저", f"${info.get('fiftyTwoWeekLow', 'N/A')}")
                 m4.metric("PER", f"{info.get('trailingPE', 'N/A'):.1f}" if isinstance(info.get('trailingPE'), float) else "N/A")
 
-                fig = make_candle_chart(hist, title=f"{us_ticker} ({us_period_label})", currency="USD", height=450)
+                us_annotated_key = f"us_annotated_{us_ticker}"
+                us_chart_text_key = f"us_chart_text_{us_ticker}"
+                if st.session_state.get(us_annotated_key):
+                    fig = make_annotated_chart(hist, title=f"{us_ticker} ({us_period_label})", currency="USD")
+                else:
+                    fig = make_candle_chart(hist, title=f"{us_ticker} ({us_period_label})", currency="USD", height=450)
                 st.plotly_chart(fig, use_container_width=True)
-                show_chart_tip()
+
+                if st.session_state.get(us_annotated_key):
+                    st.caption("🟠 MA5 (5일 이동평균)  &nbsp;|&nbsp; 🟣 MA20 (20일 이동평균)  &nbsp;|&nbsp; 🔵 지지선  &nbsp;|&nbsp; 🔴 저항선")
+                    if st.button("✖ 원래 차트로", key="us_chart_reset", use_container_width=False):
+                        st.session_state[us_annotated_key] = False
+                        st.session_state.pop(us_chart_text_key, None)
+                        st.rerun()
+                    if st.session_state.get(us_chart_text_key):
+                        st.markdown(f'<div class="tip-box">{st.session_state[us_chart_text_key]}</div>', unsafe_allow_html=True)
+                else:
+                    show_chart_tip()
 
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
@@ -1377,7 +1520,9 @@ PER: {info.get('trailingPE', 'N/A')}
 5. 초보자 한마디 — 이 차트를 보고 주의해야 할 점 한 가지
 어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
                         chart_answer = ai_analyze(chart_prompt)
-                    st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
+                    st.session_state[us_annotated_key] = True
+                    st.session_state[us_chart_text_key] = chart_answer
+                    st.rerun()
 
                 # ── 🎯 매수·손절·익절 가이드
                 st.markdown("---")
@@ -1525,9 +1670,24 @@ PER: {info.get('trailingPE', 'N/A')}
                 m2.metric("기간 최고", f"₩{high_52:,.0f}")
                 m3.metric("기간 최저", f"₩{low_52:,.0f}")
 
-                fig = make_candle_chart(kr_data, title=f"{kr_name} ({period_label})", currency="KRW", height=450)
+                kr_annotated_key = f"kr_annotated_{kr_ticker}"
+                kr_chart_text_key = f"kr_chart_text_{kr_ticker}"
+                if st.session_state.get(kr_annotated_key):
+                    fig = make_annotated_chart(kr_data, title=f"{kr_name} ({period_label})", currency="KRW")
+                else:
+                    fig = make_candle_chart(kr_data, title=f"{kr_name} ({period_label})", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
-                show_chart_tip()
+
+                if st.session_state.get(kr_annotated_key):
+                    st.caption("🟠 MA5 (5일 이동평균)  &nbsp;|&nbsp; 🟣 MA20 (20일 이동평균)  &nbsp;|&nbsp; 🔵 지지선  &nbsp;|&nbsp; 🔴 저항선")
+                    if st.button("✖ 원래 차트로", key="kr_chart_reset", use_container_width=False):
+                        st.session_state[kr_annotated_key] = False
+                        st.session_state.pop(kr_chart_text_key, None)
+                        st.rerun()
+                    if st.session_state.get(kr_chart_text_key):
+                        st.markdown(f'<div class="tip-box">{st.session_state[kr_chart_text_key]}</div>', unsafe_allow_html=True)
+                else:
+                    show_chart_tip()
 
                 btn_col1, btn_col2 = st.columns([1, 1])
                 with btn_col1:
@@ -1575,7 +1735,9 @@ PER: {info.get('trailingPE', 'N/A')}
 5. 초보자 한마디 — 이 차트를 보고 주의해야 할 점 한 가지
 어려운 용어는 꼭 쉬운 말로 풀어서 설명해주세요."""
                         chart_answer = ai_analyze(chart_prompt)
-                    st.markdown(f'<div class="tip-box">{chart_answer}</div>', unsafe_allow_html=True)
+                    st.session_state[kr_annotated_key] = True
+                    st.session_state[kr_chart_text_key] = chart_answer
+                    st.rerun()
 
                 # ── 🎯 매수·손절·익절 가이드
                 st.markdown("---")
