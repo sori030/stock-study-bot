@@ -46,26 +46,135 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .big-title { font-size: 1.8rem; font-weight: bold; color: #1f77b4; }
-    .tip-box {
-        background: #f0f7ff;
-        border-left: 4px solid #1f77b4;
-        padding: 12px 16px;
-        border-radius: 6px;
-        margin: 10px 0;
-    }
-    .strategy-box {
-        background: #fff8e1;
-        border-left: 4px solid #ffa000;
-        padding: 12px 16px;
-        border-radius: 6px;
-        margin: 10px 0;
-    }
-    .history-date {
-        font-size: 0.75rem;
-        color: #999;
-        margin-top: 4px;
-    }
+/* ── 사이드바 ── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%) !important;
+}
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div {
+    color: #cbd5e1 !important;
+}
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4 {
+    color: #f1f5f9 !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: #334155 !important;
+}
+[data-testid="stSidebar"] .stRadio label {
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+[data-testid="stSidebar"] .stRadio label:hover {
+    background: rgba(255,255,255,0.08) !important;
+}
+[data-testid="stSidebar"] [data-testid="stInfo"] {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 10px !important;
+}
+
+/* ── 페이지 헤더 배너 ── */
+.page-header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #1565c0 60%, #1976d2 100%);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(21,101,192,0.25);
+}
+.page-header .icon { font-size: 2rem; margin-bottom: 6px; }
+.page-header h1 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #ffffff !important;
+    margin: 0 0 4px 0;
+}
+.page-header p {
+    font-size: 0.88rem;
+    color: rgba(255,255,255,0.75) !important;
+    margin: 0;
+}
+
+/* ── 콘텐츠 카드 ── */
+.tip-box {
+    background: linear-gradient(135deg, #eff6ff, #f0f9ff);
+    border-left: 4px solid #3b82f6;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 12px 0;
+    box-shadow: 0 2px 10px rgba(59,130,246,0.1);
+    line-height: 1.7;
+}
+.strategy-box {
+    background: linear-gradient(135deg, #fffbeb, #fff7ed);
+    border-left: 4px solid #f59e0b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 12px 0;
+    box-shadow: 0 2px 10px rgba(245,158,11,0.12);
+    line-height: 1.7;
+}
+
+/* ── 메트릭 카드 ── */
+[data-testid="metric-container"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-top: 3px solid #3b82f6;
+    border-radius: 12px;
+    padding: 14px 16px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    transition: box-shadow 0.2s;
+}
+[data-testid="metric-container"]:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+/* ── 버튼 ── */
+.stButton > button {
+    border-radius: 9px !important;
+    font-weight: 600 !important;
+    transition: all 0.18s ease !important;
+}
+.stButton > button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15) !important;
+}
+
+/* ── 탭 ── */
+[data-baseweb="tab-list"] { gap: 6px !important; }
+[data-baseweb="tab"] {
+    border-radius: 8px 8px 0 0 !important;
+    font-weight: 600 !important;
+    padding: 8px 18px !important;
+}
+
+/* ── 입력 필드 ── */
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {
+    border-radius: 9px !important;
+}
+
+/* ── Expander ── */
+[data-testid="stExpander"] {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+}
+
+/* ── 기타 ── */
+.big-title {
+    font-size: 1.7rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #1565c0, #1976d2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.history-date { font-size: 0.75rem; color: #999; margin-top: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -750,8 +859,12 @@ def extract_term_name(text):
 
 # ── 페이지 1: 공부방 ──────────────────────────────────────────
 if page == "📚 공부방":
-    st.markdown('<div class="big-title">📚 공부방 — 무엇이든 물어보세요!</div>', unsafe_allow_html=True)
-    st.caption("경제·주식 왕초보 전용 AI 선생님. 모르는 게 있으면 뭐든 물어보세요 😊")
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">📚</div>
+        <h1>공부방</h1>
+        <p>경제·주식 왕초보 전용 AI 선생님 · 모르는 게 있으면 뭐든 물어보세요 😊</p>
+    </div>""", unsafe_allow_html=True)
 
     tab_chat, tab_dict = st.tabs(["💬 AI 대화", "📖 경제용어 사전"])
 
@@ -879,7 +992,12 @@ if page == "📚 공부방":
 
 # ── 페이지 2: 경제 뉴스 ──────────────────────────────────────
 elif page == "📰 경제 뉴스":
-    st.markdown('<div class="big-title">📰 오늘의 경제 뉴스</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">📰</div>
+        <h1>오늘의 경제 뉴스</h1>
+        <p>최신 경제 소식을 AI가 왕초보 눈높이로 쉽게 설명해드려요</p>
+    </div>""", unsafe_allow_html=True)
     st.caption("최신 경제 뉴스를 왕초보 언어로 쉽게 설명해드려요")
 
     # 네이버 API 키 확인
@@ -1090,7 +1208,12 @@ elif page == "📰 경제 뉴스":
 
 # ── 페이지 3: 관심 종목 ──────────────────────────────────────
 elif page == "⭐ 관심 종목":
-    st.markdown('<div class="big-title">⭐ 관심 종목 즐겨찾기</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">⭐</div>
+        <h1>관심 종목</h1>
+        <p>자주 보는 종목을 저장하고 현재가를 한눈에 확인하세요</p>
+    </div>""", unsafe_allow_html=True)
     st.caption("자주 보는 종목을 태그별로 분류해서 한눈에 확인하세요")
 
     if "watchlist" not in st.session_state:
@@ -1312,7 +1435,12 @@ elif page == "⭐ 관심 종목":
 
 # ── 페이지 4: 주식 정보 ──────────────────────────────────────
 elif page == "📊 주식 정보":
-    st.markdown('<div class="big-title">📊 실시간 주식 정보</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">📊</div>
+        <h1>실시간 주식 정보</h1>
+        <p>미국·한국 주식 차트 조회 · AI 차트 해석 · 매수·손절·익절 가이드</p>
+    </div>""", unsafe_allow_html=True)
     st.caption("실제 주식 데이터를 보면서 공부해요. 데이터는 Yahoo Finance / FinanceDataReader 제공 (무료)")
 
     st.markdown("### 🌍 주요 시장 지수")
@@ -1769,8 +1897,12 @@ PER: {info.get('trailingPE', 'N/A')}
 
 # ── 페이지 5: 투자 일지 ──────────────────────────────────────
 elif page == "📓 투자 일지":
-    st.markdown('<div class="big-title">📓 나의 투자 일지</div>', unsafe_allow_html=True)
-    st.caption("매수·매도 기록을 남기고 AI가 내 투자 패턴을 분석해드려요")
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">📓</div>
+        <h1>나의 투자 일지</h1>
+        <p>매수·매도 기록을 남기고 실시간 손익 · AI 패턴 분석까지</p>
+    </div>""", unsafe_allow_html=True)
 
     if "journal" not in st.session_state:
         st.session_state.journal = load_journal(session_id)
@@ -2118,8 +2250,12 @@ elif page == "📓 투자 일지":
 
 # ── 페이지 3: 나만의 전략 ─────────────────────────────────────
 elif page == "🎯 나만의 전략":
-    st.markdown('<div class="big-title">🎯 나만의 투자 전략 만들기</div>', unsafe_allow_html=True)
-    st.caption("내 상황에 맞는 현실적인 초보자 전략을 AI가 제안해드려요")
+    st.markdown("""
+    <div class="page-header">
+        <div class="icon">🎯</div>
+        <h1>나만의 투자 전략</h1>
+        <p>내 상황에 맞는 현실적인 초보자 전략을 AI가 제안해드려요</p>
+    </div>""", unsafe_allow_html=True)
 
     st.markdown("""
     <div class="strategy-box">
