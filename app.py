@@ -458,7 +458,7 @@ def detect_candle_patterns(df):
     return annotations
 
 def make_annotated_chart(df, title="", currency="KRW", height=520):
-    """MA5/MA20 + 지지·저항선 + 캔들 패턴 라벨이 포함된 분석용 차트"""
+    """9일선 / 20일선 + 거래량이 포함된 분석용 차트"""
     up_color   = "#e53935"
     down_color = "#1565c0"
 
@@ -478,40 +478,21 @@ def make_annotated_chart(df, title="", currency="KRW", height=520):
         name="주가", showlegend=False,
     ), row=1, col=1)
 
-    # MA5 (주황)
-    if len(df) >= 5:
+    # 9일선 (주황)
+    if len(df) >= 9:
         fig.add_trace(go.Scatter(
-            x=df.index, y=df["Close"].rolling(5).mean(),
-            line=dict(color="#FF9800", width=1.6),
-            name="MA5",
+            x=df.index, y=df["Close"].rolling(9).mean(),
+            line=dict(color="#FF9800", width=1.8),
+            name="9일선",
         ), row=1, col=1)
 
-    # MA20 (보라)
+    # 20일선 (보라)
     if len(df) >= 20:
         fig.add_trace(go.Scatter(
             x=df.index, y=df["Close"].rolling(20).mean(),
-            line=dict(color="#CE93D8", width=1.6),
-            name="MA20",
+            line=dict(color="#CE93D8", width=1.8),
+            name="20일선",
         ), row=1, col=1)
-
-    # 지지선·저항선 (전체 기간 기준)
-    support = float(df["Low"].min())
-    resist  = float(df["High"].max())
-    x0, x1  = df.index[0], df.index[-1]
-
-    for level, color, label in [
-        (support, "#42A5F5", f"📌 지지선 ({support:,.2f})"),
-        (resist,  "#EF5350", f"📌 저항선 ({resist:,.2f})"),
-    ]:
-        fig.add_shape(type="line", x0=x0, x1=x1, y0=level, y1=level,
-                      line=dict(color=color, width=1.4, dash="dot"), row=1, col=1)
-        fig.add_annotation(x=x0, y=level, text=label, showarrow=False,
-                           font=dict(color=color, size=10), xanchor="left",
-                           yanchor="bottom", row=1, col=1)
-
-    # 캔들 패턴 라벨
-    for ann in detect_candle_patterns(df):
-        fig.add_annotation(**ann)
 
     # 거래량
     vol_colors = [up_color if float(c) >= float(o) else down_color
@@ -1461,7 +1442,7 @@ elif page == "📊 주식 정보":
                 st.plotly_chart(fig, use_container_width=True)
 
                 if st.session_state.get(us_annotated_key):
-                    st.caption("🟠 MA5 (5일 이동평균)  &nbsp;|&nbsp; 🟣 MA20 (20일 이동평균)  &nbsp;|&nbsp; 🔵 지지선  &nbsp;|&nbsp; 🔴 저항선")
+                    st.caption("🟠 9일선 (단기 추세)  &nbsp;|&nbsp; 🟣 20일선 (중기 추세)  &nbsp;|&nbsp; 거래량은 상승일=빨강, 하락일=파랑")
                     if st.button("✖ 원래 차트로", key="us_chart_reset", use_container_width=False):
                         st.session_state[us_annotated_key] = False
                         st.session_state.pop(us_chart_text_key, None)
@@ -1679,7 +1660,7 @@ PER: {info.get('trailingPE', 'N/A')}
                 st.plotly_chart(fig, use_container_width=True)
 
                 if st.session_state.get(kr_annotated_key):
-                    st.caption("🟠 MA5 (5일 이동평균)  &nbsp;|&nbsp; 🟣 MA20 (20일 이동평균)  &nbsp;|&nbsp; 🔵 지지선  &nbsp;|&nbsp; 🔴 저항선")
+                    st.caption("🟠 9일선 (단기 추세)  &nbsp;|&nbsp; 🟣 20일선 (중기 추세)  &nbsp;|&nbsp; 거래량은 상승일=빨강, 하락일=파랑")
                     if st.button("✖ 원래 차트로", key="kr_chart_reset", use_container_width=False):
                         st.session_state[kr_annotated_key] = False
                         st.session_state.pop(kr_chart_text_key, None)
