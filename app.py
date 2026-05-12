@@ -531,12 +531,19 @@ elif page == "⭐ 관심 종목":
 
     @st.cache_data(ttl=86400)
     def get_krx_name_map():
-        """KRX 전체 종목의 한글 이름 딕셔너리 반환 (하루 1회 캐시)"""
-        try:
-            df = fdr.StockListing('KRX')
-            return dict(zip(df['Code'].astype(str).str.zfill(6), df['Name']))
-        except:
-            return {}
+        """KOSPI + KOSDAQ 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
+        name_map = {}
+        for market in ['KOSPI', 'KOSDAQ']:
+            try:
+                df = fdr.StockListing(market)
+                code_col = next((c for c in df.columns if c.lower() in ['code', 'symbol', '종목코드']), None)
+                name_col = next((c for c in df.columns if c.lower() in ['name', '종목명', '이름']), None)
+                if code_col and name_col:
+                    for code, name in zip(df[code_col].astype(str), df[name_col]):
+                        name_map[code.zfill(6)] = name
+            except:
+                pass
+        return name_map
 
     def auto_classify_with_name(ticker, market_tag):
         """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
@@ -615,28 +622,19 @@ elif page == "⭐ 관심 종목":
         """, unsafe_allow_html=True)
     else:
         # ── 태그 필터 ──
-        all_tags = list(dict.fromkeys([w.get("tag", "기타") for w in st.session_state.watchlist]))
-        filter_options = ["전체"] + all_tags
+        filter_options = ["전체"] + list(TAG_COLORS.keys())
 
         if "selected_filter" not in st.session_state:
             st.session_state.selected_filter = "전체"
 
-        # 태그 필터 버튼
+        # 태그 필터 버튼 (선택된 것만 primary 강조)
         filter_cols = st.columns(len(filter_options))
         for idx, opt in enumerate(filter_options):
+            is_selected = st.session_state.selected_filter == opt
             with filter_cols[idx]:
-                color = TAG_COLORS.get(opt, "#607D8B") if opt != "전체" else "#333333"
-                is_selected = st.session_state.selected_filter == opt
-                bg = color if is_selected else "white"
-                text_color = "white" if is_selected else color
-                border = color
-                st.markdown(
-                    f'<div style="border:2px solid {border};background:{bg};color:{text_color};'
-                    f'padding:7px 0;border-radius:20px;text-align:center;font-weight:bold;'
-                    f'font-size:0.85rem;margin-bottom:4px">{opt}</div>',
-                    unsafe_allow_html=True
-                )
-                if st.button(opt, key=f"filter_{opt}", use_container_width=True):
+                btn_label = f"● {opt}" if is_selected else opt
+                if st.button(btn_label, key=f"filter_{opt}", use_container_width=True,
+                             type="primary" if is_selected else "secondary"):
                     st.session_state.selected_filter = opt
                     st.rerun()
 
@@ -670,14 +668,13 @@ elif page == "⭐ 관심 종목":
             flag = "🇺🇸" if market_tag == "US" else "🇰🇷"
 
             # 이름 없거나 코드 그대로이거나, 한국 종목인데 영문 이름인 경우 → 다시 가져오기
-            is_kr_english = (market_tag == "KR" and saved_name and saved_name.replace(" ","").isascii())
+            is_kr_english = (market_tag == "KR" and saved_name and saved_name.replace(" ", "").isascii())
             if not saved_name or saved_name == ticker or is_kr_english:
                 fetched_name, fetched_tag = auto_classify_with_name(ticker, market_tag)
                 saved_name = fetched_name
                 item["name"] = fetched_name
-                if tag == "기타":
-                    item["tag"] = fetched_tag
-                    tag = fetched_tag
+                item["tag"] = fetched_tag  # 항상 태그도 갱신
+                tag = fetched_tag
                 save_watchlist(session_id, st.session_state.watchlist)
 
             with st.container():
