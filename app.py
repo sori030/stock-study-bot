@@ -81,7 +81,6 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     width: 100% !important;
     display: flex !important;
     flex-direction: column !important;
-    align-items: center !important;
     gap: 6px !important;
 }
 /* 라디오 동그라미 숨기기 */
@@ -93,11 +92,11 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     background: rgba(255,255,255,0.05) !important;
     border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 10px !important;
-    padding: 10px 14px !important;
+    padding: 12px 16px !important;
     margin: 0 !important;
     cursor: pointer !important;
     transition: all 0.18s ease !important;
-    width: 88% !important;
+    width: 100% !important;
     box-sizing: border-box !important;
     justify-content: center !important;
 }
