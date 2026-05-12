@@ -48,23 +48,12 @@ st.markdown("""
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
 
-html, body, p, div, h1, h2, h3, h4, h5, h6,
-label, li, td, th, caption, textarea, select {
+body {
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif !important;
+}
+p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif !important;
     letter-spacing: -0.02em !important;
-}
-/* 버튼 텍스트만 폰트 적용 (아이콘 제외) */
-.stButton > button > div > p,
-.stButton > button > p {
-    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif !important;
-    letter-spacing: -0.02em !important;
-}
-/* Streamlit 내부 아이콘 초기화 */
-[data-testid="stExpander"] summary svg,
-span[data-testid*="Icon"],
-[class*="icon"], [class*="Icon"] {
-    font-family: initial !important;
-    letter-spacing: normal !important;
 }
 
 /* ── 사이드바 ── */
