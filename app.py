@@ -46,6 +46,13 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+* {
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif !important;
+    letter-spacing: -0.03em !important;
+}
+
 /* ── 사이드바 ── */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%) !important;
