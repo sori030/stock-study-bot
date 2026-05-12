@@ -179,6 +179,19 @@ with st.sidebar:
     st.markdown("#### 📌 오늘의 한마디")
     st.info("주식은 단기가 아닌 장기 여정입니다. 꾸준히 공부하는 게 가장 좋은 전략이에요! 💪")
 
+    st.markdown("---")
+    st.markdown("#### 📖 오늘의 경제용어")
+    _kb = load_knowledge_base()
+    _term_chunks = [c for c in _kb if c.get("source") == "한국은행 경제금융용어 800선"]
+    if _term_chunks:
+        _idx = datetime.today().timetuple().tm_yday % len(_term_chunks)
+        _chunk = _term_chunks[_idx]
+        _lines = [l.strip() for l in _chunk["text"].split("\n") if len(l.strip()) >= 2]
+        _term_name = _lines[0] if _lines else "경제용어"
+        _term_body = " ".join(_lines[1:])[:180] if len(_lines) > 1 else ""
+        st.markdown(f"**{_term_name}**")
+        st.caption(_term_body + ("..." if len(_term_body) == 180 else ""))
+
 if not api_key:
     st.warning("⬅️ 왼쪽 사이드바에서 Gemini API 키를 입력해주세요.")
     st.stop()
@@ -512,82 +525,164 @@ def ai_analyze(prompt, knowledge_context=""):
         else:
             return f"❌ 오류가 발생했어요. 잠시 후 다시 시도해주세요.\n\n`{err[:100]}`"
 
+# ── 초성 추출 헬퍼 ────────────────────────────────────────────
+def get_chosung(char):
+    CHOSUNGS = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+    if '가' <= char <= '힣':
+        return CHOSUNGS[(ord(char) - ord('가')) // 588]
+    return char[0].upper() if char else "?"
+
+def extract_term_name(text):
+    """청크 텍스트에서 첫 번째 용어명 추출"""
+    for line in text.split("\n"):
+        line = line.strip()
+        if len(line) >= 2 and not (len(line) == 1 and 'ㄱ' <= line <= 'ㅎ'):
+            return line
+    return ""
+
 # ── 페이지 1: 공부방 ──────────────────────────────────────────
 if page == "📚 공부방":
     st.markdown('<div class="big-title">📚 공부방 — 무엇이든 물어보세요!</div>', unsafe_allow_html=True)
     st.caption("경제·주식 왕초보 전용 AI 선생님. 모르는 게 있으면 뭐든 물어보세요 😊")
 
-    # ── 빠른 질문 버튼 (상단 가로 배치)
-    quick_qs = [
-        "주식이 뭔가요?", "금리가 뭔가요?", "ETF가 뭔가요?", "PER이 뭔가요?",
-        "환율이 주식에 미치는 영향은?", "코스피 vs 나스닥 차이는?",
-        "인플레이션이 뭔가요?", "분산투자가 뭔가요?",
-    ]
-    q_cols = st.columns(4)
-    for i, q in enumerate(quick_qs):
-        with q_cols[i % 4]:
-            if st.button(q, use_container_width=True, key=f"quick_{q}"):
-                st.session_state.pending_question = q
+    tab_chat, tab_dict = st.tabs(["💬 AI 대화", "📖 경제용어 사전"])
 
-    del_col, _ = st.columns([1, 3])
-    with del_col:
-        if st.button("🗑️ 대화 내역 전체 삭제", use_container_width=True):
-            st.session_state.messages = []
-            clear_history(session_id)
-            model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=SYSTEM_PROMPT)
-            st.session_state.chat_session = model.start_chat(history=[])
+    # ══ 탭1: AI 대화 ══════════════════════════════════════════
+    with tab_chat:
+        quick_qs = [
+            "주식이 뭔가요?", "금리가 뭔가요?", "ETF가 뭔가요?", "PER이 뭔가요?",
+            "환율이 주식에 미치는 영향은?", "코스피 vs 나스닥 차이는?",
+            "인플레이션이 뭔가요?", "분산투자가 뭔가요?",
+        ]
+        q_cols = st.columns(4)
+        for i, q in enumerate(quick_qs):
+            with q_cols[i % 4]:
+                if st.button(q, use_container_width=True, key=f"quick_{q}"):
+                    st.session_state.pending_question = q
+
+        del_col, _ = st.columns([1, 3])
+        with del_col:
+            if st.button("🗑️ 대화 내역 전체 삭제", use_container_width=True):
+                st.session_state.messages = []
+                clear_history(session_id)
+                model = genai.GenerativeModel("gemini-2.5-flash-lite", system_instruction=SYSTEM_PROMPT)
+                st.session_state.chat_session = model.start_chat(history=[])
+                st.rerun()
+
+        st.markdown("---")
+
+        if not st.session_state.messages:
+            st.markdown("""
+            <div class="tip-box">
+            💡 <b>이렇게 물어보세요!</b><br>
+            • "금리가 오르면 주식이 왜 떨어져요?"<br>
+            • "삼성전자 주식은 왜 사람들이 사나요?"<br>
+            • "S&P500 ETF가 좋다는데 그게 뭔가요?"<br>
+            • "100만원으로 주식 시작하려면 어떻게 해요?"
+            </div>
+            """, unsafe_allow_html=True)
+
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg.get("timestamp"):
+                    st.markdown(f'<div class="history-date">{msg["timestamp"]}</div>', unsafe_allow_html=True)
+
+        def handle_question(user_input):
+            add_message("user", user_input)
+            with st.spinner("공부 중...✏️"):
+                chunks = search_knowledge(user_input)
+                ctx = ""
+                if chunks:
+                    ctx = "📚 참고 자료 (경제·주식 교육 교재에서 발췌):\n"
+                    for c in chunks:
+                        ctx += f"\n[출처: {c['source']}]\n{c['text'][:400]}\n"
+                    ctx += "\n위 자료를 참고해서 답변해주세요.\n"
+                answer = ai_analyze(user_input, knowledge_context=ctx)
+            add_message("assistant", answer)
             st.rerun()
 
-    st.markdown("---")
+        if "pending_question" in st.session_state and st.session_state.pending_question:
+            q = st.session_state.pending_question
+            st.session_state.pending_question = None
+            handle_question(q)
 
-    # ── 대화 내역 (컬럼 없이 전체 너비)
-    if not st.session_state.messages:
-        st.markdown("""
-        <div class="tip-box">
-        💡 <b>이렇게 물어보세요!</b><br>
-        • "금리가 오르면 주식이 왜 떨어져요?"<br>
-        • "삼성전자 주식은 왜 사람들이 사나요?"<br>
-        • "S&P500 ETF가 좋다는데 그게 뭔가요?"<br>
-        • "100만원으로 주식 시작하려면 어떻게 해요?"
-        </div>
-        """, unsafe_allow_html=True)
+        with st.form(key="chat_form", clear_on_submit=True):
+            f_col1, f_col2 = st.columns([6, 1])
+            with f_col1:
+                user_input = st.text_input("질문 입력",
+                                           placeholder="궁금한 걸 물어보세요! 아무것도 몰라도 괜찮아요 😊",
+                                           label_visibility="collapsed")
+            with f_col2:
+                submitted = st.form_submit_button("전송", use_container_width=True, type="primary")
+        if submitted and user_input:
+            handle_question(user_input)
 
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if msg.get("timestamp"):
-                st.markdown(f'<div class="history-date">{msg["timestamp"]}</div>', unsafe_allow_html=True)
+    # ══ 탭2: 경제용어 사전 ════════════════════════════════════
+    with tab_dict:
+        st.markdown("### 📖 경제·금융 용어 사전")
+        st.caption("한국은행 경제금융용어 800선 · 알기 쉬운 경제이야기 · 대학생을 위한 금융 첫걸음")
 
-    # ── 질문 처리
-    def handle_question(user_input):
-        add_message("user", user_input)
-        with st.spinner("공부 중...✏️"):
-            chunks = search_knowledge(user_input)
-            ctx = ""
-            if chunks:
-                ctx = "📚 참고 자료 (경제·주식 교육 교재에서 발췌):\n"
-                for c in chunks:
-                    ctx += f"\n[출처: {c['source']}]\n{c['text'][:400]}\n"
-                ctx += "\n위 자료를 참고해서 답변해주세요.\n"
-            answer = ai_analyze(user_input, knowledge_context=ctx)
-        add_message("assistant", answer)
-        st.rerun()
+        kb_all = load_knowledge_base()
 
-    if "pending_question" in st.session_state and st.session_state.pending_question:
-        q = st.session_state.pending_question
-        st.session_state.pending_question = None
-        handle_question(q)
+        # ── 출처 분류 탭
+        src_labels = {
+            "전체": None,
+            "📘 경제금융용어": "한국은행 경제금융용어 800선",
+            "📗 경제이야기": "알기 쉬운 경제이야기(일반인용)",
+            "📙 금융 첫걸음": "대학생을 위한 금융 첫걸음",
+        }
+        if "dict_src" not in st.session_state:
+            st.session_state.dict_src = "전체"
 
-    with st.form(key="chat_form", clear_on_submit=True):
-        f_col1, f_col2 = st.columns([6, 1])
-        with f_col1:
-            user_input = st.text_input("질문 입력",
-                                       placeholder="궁금한 걸 물어보세요! 아무것도 몰라도 괜찮아요 😊",
-                                       label_visibility="collapsed")
-        with f_col2:
-            submitted = st.form_submit_button("전송", use_container_width=True, type="primary")
-    if submitted and user_input:
-        handle_question(user_input)
+        src_cols = st.columns(len(src_labels))
+        for si, slabel in enumerate(src_labels):
+            with src_cols[si]:
+                is_sel = st.session_state.dict_src == slabel
+                if st.button(slabel, key=f"src_{slabel}", use_container_width=True,
+                             type="primary" if is_sel else "secondary"):
+                    st.session_state.dict_src = slabel
+                    st.session_state.pop("dict_cho", None)
+                    st.rerun()
+
+        src_filter = src_labels[st.session_state.dict_src]
+        filtered_kb = [c for c in kb_all if src_filter is None or c.get("source") == src_filter]
+
+        # ── 초성 필터 (경제금융용어 선택 시)
+        CHOSUNGS_LIST = ["전체", "ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+        if st.session_state.dict_src in ("전체", "📘 경제금융용어"):
+            if "dict_cho" not in st.session_state:
+                st.session_state.dict_cho = "전체"
+            cho_cols = st.columns(len(CHOSUNGS_LIST))
+            for ci, cho in enumerate(CHOSUNGS_LIST):
+                with cho_cols[ci]:
+                    is_sel = st.session_state.dict_cho == cho
+                    if st.button(cho, key=f"cho_{cho}", use_container_width=True,
+                                 type="primary" if is_sel else "secondary"):
+                        st.session_state.dict_cho = cho
+                        st.rerun()
+            cho_filter = st.session_state.dict_cho
+            if cho_filter != "전체":
+                filtered_kb = [c for c in filtered_kb
+                               if get_chosung(extract_term_name(c["text"])[:1] or "?") == cho_filter]
+        else:
+            st.session_state.dict_cho = "전체"
+
+        st.markdown(f"**{len(filtered_kb)}개** 항목")
+        st.markdown("---")
+
+        # ── 용어 카드 표시
+        for chunk in filtered_kb[:80]:  # 최대 80개 표시
+            term_name = extract_term_name(chunk["text"])
+            if not term_name:
+                continue
+            src_badge = chunk.get("source", "")[:10]
+            with st.expander(f"**{term_name}** `{src_badge}`"):
+                st.markdown(chunk["text"][:600] + ("..." if len(chunk["text"]) > 600 else ""),
+                            unsafe_allow_html=False)
+                if st.button(f"🤖 AI에게 더 쉽게 설명 요청", key=f"dict_ai_{term_name[:15]}"):
+                    st.session_state.pending_question = f"{term_name}이(가) 뭔가요? 왕초보에게 쉽게 설명해주세요."
+                    st.rerun()
 
 # ── 페이지 2: 경제 뉴스 ──────────────────────────────────────
 elif page == "📰 경제 뉴스":
