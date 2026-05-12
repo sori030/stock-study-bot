@@ -490,6 +490,38 @@ def tag_badge(tag):
     color = TAG_COLORS.get(tag, "#607D8B")
     return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
 
+@st.cache_data(ttl=60)
+def search_us_stocks(query):
+    """야후 파이낸스 검색 API로 미국 주식·ETF 티커 검색"""
+    try:
+        url = (
+            f"https://query2.finance.yahoo.com/v1/finance/search"
+            f"?q={requests.utils.quote(query)}&quotesCount=8&newsCount=0&listsCount=0"
+        )
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        results = []
+        for q in resp.json().get("quotes", []):
+            if q.get("quoteType") in ("EQUITY", "ETF"):
+                results.append({
+                    "ticker": q.get("symbol", ""),
+                    "name": q.get("longname") or q.get("shortname", ""),
+                    "exchange": q.get("exchange", ""),
+                })
+        return results
+    except Exception:
+        return []
+
+def search_kr_stocks(query, name_map):
+    """이름으로 한국 주식 검색 (부분 일치)"""
+    query = query.strip()
+    if not query:
+        return []
+    return [
+        {"ticker": code, "name": name}
+        for code, name in name_map.items()
+        if query in name
+    ][:10]
+
 @st.cache_data(ttl=86400)
 def get_krx_name_map():
     """KOSPI + KOSDAQ + ETF/KR 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
@@ -1208,9 +1240,26 @@ elif page == "📊 주식 정보":
             "NVDA (엔비디아)": "NVDA",
         }
 
+        with st.expander("🔍 회사 이름으로 검색"):
+            us_name_q = st.text_input("회사 이름 입력", placeholder="예: apple, 테슬라, nvidia", key="us_name_q")
+            if us_name_q and len(us_name_q) >= 2:
+                with st.spinner("검색 중..."):
+                    us_results = search_us_stocks(us_name_q)
+                if us_results:
+                    st.caption("아래 종목을 클릭하면 바로 조회돼요")
+                    rc1, rc2 = st.columns(2)
+                    for i, r in enumerate(us_results[:6]):
+                        with (rc1 if i % 2 == 0 else rc2):
+                            label = f"**{r['ticker']}** — {r['name'][:24]}"
+                            if st.button(label, key=f"us_sr_{i}", use_container_width=True):
+                                st.session_state["us_input"] = r["ticker"]
+                                st.rerun()
+                else:
+                    st.caption("검색 결과가 없어요. 영어로 다시 시도해보세요.")
+
         col_a, col_b = st.columns([2, 1])
         with col_a:
-            us_ticker = st.text_input("티커 입력 (영문)", placeholder="예: AAPL", key="us_input").upper().strip()
+            us_ticker = st.text_input("티커 직접 입력 (영문)", placeholder="예: AAPL", key="us_input").upper().strip()
         with col_b:
             selected_popular = st.selectbox("인기 종목", ["직접 입력"] + list(popular_us.keys()), key="us_popular")
 
@@ -1391,9 +1440,26 @@ PER: {info.get('trailingPE', 'N/A')}
             "TIGER미국S&P500 ETF (360750)": "360750",
         }
 
+        with st.expander("🔍 회사 이름으로 검색"):
+            kr_name_q = st.text_input("회사 이름 입력", placeholder="예: 삼성, 카카오, TIGER", key="kr_name_q")
+            if kr_name_q and len(kr_name_q) >= 2:
+                with st.spinner("검색 중..."):
+                    kr_name_map = get_krx_name_map()
+                    kr_results = search_kr_stocks(kr_name_q, kr_name_map)
+                if kr_results:
+                    st.caption("아래 종목을 클릭하면 바로 조회돼요")
+                    krc1, krc2 = st.columns(2)
+                    for i, r in enumerate(kr_results):
+                        with (krc1 if i % 2 == 0 else krc2):
+                            if st.button(f"**{r['ticker']}** — {r['name']}", key=f"kr_sr_{i}", use_container_width=True):
+                                st.session_state["kr_input"] = r["ticker"]
+                                st.rerun()
+                else:
+                    st.caption("검색 결과가 없어요. 다른 키워드로 시도해보세요.")
+
         col_c, col_d = st.columns([2, 1])
         with col_c:
-            kr_ticker = st.text_input("종목 코드 입력 (6자리)", placeholder="예: 005930", key="kr_input").strip()
+            kr_ticker = st.text_input("종목 코드 직접 입력 (6자리)", placeholder="예: 005930", key="kr_input").strip()
         with col_d:
             selected_kr = st.selectbox("인기 종목", ["직접 입력"] + list(popular_kr.keys()), key="kr_popular")
 
