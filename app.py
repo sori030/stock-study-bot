@@ -3,6 +3,7 @@ import google.generativeai as genai
 import yfinance as yf
 import FinanceDataReader as fdr
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
 import os
 import json
@@ -238,6 +239,56 @@ def get_index_data():
         except:
             pass
     return result
+
+# ── 캔들차트 + 거래량 공통 함수 ──────────────────────────────
+def make_candle_chart(df, title="", currency="KRW", height=420):
+    """OHLCV DataFrame으로 캔들차트 + 거래량 생성 (한국식: 빨간=상승, 파란=하락)"""
+    up_color   = "#e53935"  # 상승 빨간
+    down_color = "#1565c0"  # 하락 파란
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.72, 0.28],
+        vertical_spacing=0.03
+    )
+
+    # 캔들스틱
+    fig.add_trace(go.Candlestick(
+        x=df.index,
+        open=df["Open"], high=df["High"],
+        low=df["Low"],   close=df["Close"],
+        increasing=dict(line=dict(color=up_color), fillcolor=up_color),
+        decreasing=dict(line=dict(color=down_color), fillcolor=down_color),
+        name="주가",
+        showlegend=False,
+    ), row=1, col=1)
+
+    # 거래량 막대 (상승일=빨간, 하락일=파란)
+    vol_colors = [
+        up_color if float(c) >= float(o) else down_color
+        for c, o in zip(df["Close"], df["Open"])
+    ]
+    fig.add_trace(go.Bar(
+        x=df.index, y=df["Volume"],
+        marker_color=vol_colors, opacity=0.75,
+        name="거래량", showlegend=False,
+    ), row=2, col=1)
+
+    y_label = "USD" if currency == "USD" else "원"
+    fig.update_layout(
+        title=title,
+        xaxis_rangeslider_visible=False,
+        height=height,
+        margin=dict(t=30 if title else 10, b=10, l=0, r=0),
+        plot_bgcolor="#0e1117",
+        paper_bgcolor="#0e1117",
+        font=dict(color="#fafafa"),
+        xaxis2=dict(showgrid=False),
+        xaxis=dict(showgrid=True, gridcolor="#2a2a2a"),
+        yaxis=dict(title=y_label, showgrid=True, gridcolor="#2a2a2a"),
+        yaxis2=dict(title="거래량", showgrid=False),
+    )
+    return fig
 
 # ── 관심종목 공통 함수 ────────────────────────────────────────
 TAG_COLORS = {
@@ -782,11 +833,7 @@ elif page == "⭐ 관심 종목":
                                     dc2.metric("52주 최고", f"${d_info.get('fiftyTwoWeekHigh','N/A')}")
                                     dc3.metric("52주 최저", f"${d_info.get('fiftyTwoWeekLow','N/A')}")
                                     dc4.metric("PER", f"{d_info.get('trailingPE','N/A'):.1f}" if isinstance(d_info.get('trailingPE'), float) else "N/A")
-                                    fig = go.Figure()
-                                    fig.add_trace(go.Scatter(x=d_hist.index, y=d_hist["Close"], mode="lines",
-                                                             line=dict(color="#1f77b4", width=2)))
-                                    fig.update_layout(height=220, margin=dict(t=10, b=10, l=0, r=0),
-                                                      xaxis_title="날짜", yaxis_title="USD")
+                                    fig = make_candle_chart(d_hist, currency="USD", height=320)
                                     st.plotly_chart(fig, use_container_width=True)
                             else:
                                 d_end = datetime.today()
@@ -800,11 +847,7 @@ elif page == "⭐ 관심 종목":
                                     dc1.metric("현재가", f"₩{d_price:,.0f}", f"{'+' if d_chg>0 else ''}{d_chg:.2f}%")
                                     dc2.metric("3개월 최고", f"₩{float(d_data['Close'].max()):,.0f}")
                                     dc3.metric("3개월 최저", f"₩{float(d_data['Close'].min()):,.0f}")
-                                    fig = go.Figure()
-                                    fig.add_trace(go.Scatter(x=d_data.index, y=d_data["Close"], mode="lines",
-                                                             line=dict(color="#e53935", width=2)))
-                                    fig.update_layout(height=220, margin=dict(t=10, b=10, l=0, r=0),
-                                                      xaxis_title="날짜", yaxis_title="원")
+                                    fig = make_candle_chart(d_data, currency="KRW", height=320)
                                     st.plotly_chart(fig, use_container_width=True)
                         except Exception:
                             st.caption("데이터를 불러올 수 없어요.")
@@ -880,17 +923,7 @@ elif page == "📊 주식 정보":
                 m3.metric("52주 최저", f"${info.get('fiftyTwoWeekLow', 'N/A')}")
                 m4.metric("PER", f"{info.get('trailingPE', 'N/A'):.1f}" if isinstance(info.get('trailingPE'), float) else "N/A")
 
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=hist.index, y=hist["Close"],
-                    mode="lines", name="종가",
-                    line=dict(color="#1f77b4", width=2)
-                ))
-                fig.update_layout(
-                    title=f"{us_ticker} 최근 3개월 주가",
-                    xaxis_title="날짜", yaxis_title="가격 (USD)",
-                    height=300, margin=dict(t=40, b=20)
-                )
+                fig = make_candle_chart(hist, title=f"{us_ticker} 최근 3개월", currency="USD", height=450)
                 st.plotly_chart(fig, use_container_width=True)
 
                 btn_col1, btn_col2 = st.columns([1, 1])
@@ -963,17 +996,7 @@ PER: {info.get('trailingPE', 'N/A')}
                 m2.metric("3개월 최고", f"₩{high_52:,.0f}")
                 m3.metric("3개월 최저", f"₩{low_52:,.0f}")
 
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=kr_data.index, y=kr_data["Close"],
-                    mode="lines", name="종가",
-                    line=dict(color="#e53935", width=2)
-                ))
-                fig.update_layout(
-                    title=f"{kr_ticker} 최근 3개월 주가",
-                    xaxis_title="날짜", yaxis_title="가격 (원)",
-                    height=300, margin=dict(t=40, b=20)
-                )
+                fig = make_candle_chart(kr_data, title=f"{kr_name} 최근 3개월", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
 
                 kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
