@@ -75,7 +75,10 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     border-color: #334155 !important;
 }
 /* ── 사이드바 카드형 네비게이션 ── */
-[data-testid="stRadio"] > div {
+[data-testid="stRadio"],
+[data-testid="stRadio"] > div,
+[data-testid="stRadio"] > div > div {
+    width: 100% !important;
     display: flex !important;
     flex-direction: column !important;
     gap: 6px !important;
@@ -90,10 +93,11 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 10px !important;
     padding: 10px 14px !important;
-    margin: 0 4px !important;
+    margin: 0 !important;
     cursor: pointer !important;
     transition: all 0.18s ease !important;
-    width: calc(100% - 8px) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
     justify-content: center !important;
 }
 /* 카드 텍스트 가운데 정렬 + 줄바꿈 방지 */
