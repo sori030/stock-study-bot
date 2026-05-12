@@ -239,6 +239,88 @@ def get_index_data():
             pass
     return result
 
+# ── 관심종목 공통 함수 ────────────────────────────────────────
+TAG_COLORS = {
+    "ETF":    "#4CAF50",
+    "기술주":  "#2196F3",
+    "배당주":  "#FF9800",
+    "성장주":  "#9C27B0",
+    "한국주식": "#F44336",
+    "개별주":  "#00BCD4",
+    "기타":    "#607D8B",
+}
+
+def tag_badge(tag):
+    color = TAG_COLORS.get(tag, "#607D8B")
+    return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
+
+@st.cache_data(ttl=86400)
+def get_krx_name_map():
+    """KOSPI + KOSDAQ + ETF/KR 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
+    name_map = {}
+    for market in ['KOSPI', 'KOSDAQ']:
+        try:
+            df = fdr.StockListing(market)
+            for code, name in zip(df['Code'].astype(str), df['Name']):
+                name_map[code.zfill(6)] = name
+        except:
+            pass
+    try:
+        etf_df = fdr.StockListing('ETF/KR')
+        for code, name in zip(etf_df['Symbol'].astype(str), etf_df['Name']):
+            name_map[code.zfill(6)] = name
+    except:
+        pass
+    return name_map
+
+def auto_classify_with_name(ticker, market_tag):
+    """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
+    try:
+        if market_tag == "KR":
+            krx_map = get_krx_name_map()
+            name = krx_map.get(ticker.zfill(6), ticker)
+            etf_name_keywords = ["KODEX", "TIGER", "KBSTAR", "HANARO", "ARIRANG",
+                                  "KOSEF", "SOL ", "ACE ", "TIMEFOLIO", "FOCUS", "WOORI",
+                                  "PLUS", "TREX", "SMART", "ETF"]
+            etf_backup_codes = ["069500","229200","360750","133690","195930","148020",
+                                 "114800","252670","102110","251340","kodex","tiger"]
+            is_etf = (any(k in name.upper() for k in etf_name_keywords) or
+                      (name == ticker and any(k in ticker.lower() for k in etf_backup_codes)))
+            tag = "ETF" if is_etf else "한국주식"
+            return name, tag
+        info = yf.Ticker(ticker).info
+        name = info.get("shortName") or info.get("longName") or ticker
+        quote_type = info.get("quoteType", "")
+        sector = info.get("sector", "")
+        div_yield = info.get("dividendYield") or 0
+        if quote_type == "ETF":
+            tag = "ETF"
+        elif sector in ["Technology", "Communication Services"]:
+            tag = "기술주"
+        elif div_yield >= 0.025:
+            tag = "배당주"
+        elif sector in ["Consumer Cyclical", "Healthcare", "Industrials",
+                        "Consumer Defensive", "Real Estate"]:
+            tag = "성장주"
+        else:
+            tag = "개별주"
+        return name, tag
+    except:
+        return ticker, "기타"
+
+def add_to_watchlist(ticker, market_tag, session_id):
+    """관심종목에 추가 (중복 체크 포함). 성공 여부 반환."""
+    if "watchlist" not in st.session_state:
+        st.session_state.watchlist = load_watchlist(session_id)
+    existing = [w["ticker"] for w in st.session_state.watchlist]
+    if ticker in existing:
+        return False, "already"
+    name, tag = auto_classify_with_name(ticker, market_tag)
+    entry = {"ticker": ticker, "market": market_tag, "tag": tag, "name": name}
+    st.session_state.watchlist.append(entry)
+    save_watchlist(session_id, st.session_state.watchlist)
+    return True, name
+
 def add_message(role, content):
     msg = {
         "role": role,
@@ -515,83 +597,6 @@ elif page == "⭐ 관심 종목":
             if "tag" not in item:
                 item["tag"] = "기타"
 
-    TAG_COLORS = {
-        "ETF":    "#4CAF50",
-        "기술주":  "#2196F3",
-        "배당주":  "#FF9800",
-        "성장주":  "#9C27B0",
-        "한국주식": "#F44336",
-        "개별주":  "#00BCD4",
-        "기타":    "#607D8B",
-    }
-
-    def tag_badge(tag):
-        color = TAG_COLORS.get(tag, "#607D8B")
-        return f'<span style="background:{color};color:white;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:bold">{tag}</span>'
-
-    @st.cache_data(ttl=86400)
-    def get_krx_name_map():
-        """KOSPI + KOSDAQ + ETF/KR 전체 종목 한글 이름 딕셔너리 (하루 1회 캐시)"""
-        name_map = {}
-        # 일반 주식: Code 컬럼
-        for market in ['KOSPI', 'KOSDAQ']:
-            try:
-                df = fdr.StockListing(market)
-                for code, name in zip(df['Code'].astype(str), df['Name']):
-                    name_map[code.zfill(6)] = name
-            except:
-                pass
-        # ETF: Symbol 컬럼 (별도 리스팅)
-        try:
-            etf_df = fdr.StockListing('ETF/KR')
-            for code, name in zip(etf_df['Symbol'].astype(str), etf_df['Name']):
-                name_map[code.zfill(6)] = name
-        except:
-            pass
-        return name_map
-
-    def auto_classify_with_name(ticker, market_tag):
-        """종목 정보를 가져와서 이름 + 태그 자동 분류 → (name, tag) 반환"""
-        try:
-            if market_tag == "KR":
-                # 한국: KRX 맵에서 한글 이름 조회
-                krx_map = get_krx_name_map()
-                name = krx_map.get(ticker.zfill(6), ticker)
-
-                # ETF 판별: 이름에 운용사 키워드 있으면 ETF (코드 하드코딩보다 정확)
-                etf_name_keywords = ["KODEX", "TIGER", "KBSTAR", "HANARO", "ARIRANG",
-                                     "KOSEF", "SOL ", "ACE ", "TIMEFOLIO", "FOCUS", "WOORI",
-                                     "PLUS", "TREX", "SMART", "ETF"]
-                # 이름으로 못 찾은 경우 보조 코드 목록으로 보완
-                etf_backup_codes = ["069500","229200","360750","133690","195930","148020",
-                                    "114800","252670","102110","251340","kodex","tiger"]
-                is_etf = (any(k in name.upper() for k in etf_name_keywords) or
-                          (name == ticker and any(k in ticker.lower() for k in etf_backup_codes)))
-                tag = "ETF" if is_etf else "한국주식"
-                return name, tag
-
-            # 미국 주식: yfinance로 실제 데이터 기반 분류
-            info = yf.Ticker(ticker).info
-            name = info.get("shortName") or info.get("longName") or ticker
-            quote_type = info.get("quoteType", "")
-            sector = info.get("sector", "")
-            div_yield = info.get("dividendYield") or 0
-
-            if quote_type == "ETF":
-                tag = "ETF"
-            elif sector in ["Technology", "Communication Services"]:
-                tag = "기술주"
-            elif div_yield >= 0.025:  # 배당수익률 2.5% 이상
-                tag = "배당주"
-            elif sector in ["Consumer Cyclical", "Healthcare", "Industrials",
-                            "Consumer Defensive", "Real Estate"]:
-                tag = "성장주"
-            else:
-                tag = "개별주"
-            return name, tag
-        except:
-            return ticker, "기타"
-
     # ── 종목 추가 ──
     st.markdown("### ➕ 종목 추가")
     st.caption("종목 코드만 입력하면 ETF·기술주·배당주 등 자동으로 분류돼요!")
@@ -762,6 +767,48 @@ elif page == "⭐ 관심 종목":
                             save_watchlist(session_id, st.session_state.watchlist)
                             st.rerun()
 
+                # 토글 상세보기
+                with st.expander(f"📊 {saved_name} 상세보기"):
+                    with st.spinner("차트 불러오는 중..."):
+                        try:
+                            if market_tag == "US":
+                                d_info, d_hist = get_us_stock(ticker)
+                                if d_info and d_hist is not None and len(d_hist) > 0:
+                                    d_price = d_info.get("currentPrice") or float(d_hist["Close"].iloc[-1])
+                                    d_prev = d_info.get("previousClose", float(d_hist["Close"].iloc[-2]))
+                                    d_chg = (d_price - d_prev) / d_prev * 100
+                                    dc1, dc2, dc3, dc4 = st.columns(4)
+                                    dc1.metric("현재가", f"${d_price:,.2f}", f"{'+' if d_chg>0 else ''}{d_chg:.2f}%")
+                                    dc2.metric("52주 최고", f"${d_info.get('fiftyTwoWeekHigh','N/A')}")
+                                    dc3.metric("52주 최저", f"${d_info.get('fiftyTwoWeekLow','N/A')}")
+                                    dc4.metric("PER", f"{d_info.get('trailingPE','N/A'):.1f}" if isinstance(d_info.get('trailingPE'), float) else "N/A")
+                                    fig = go.Figure()
+                                    fig.add_trace(go.Scatter(x=d_hist.index, y=d_hist["Close"], mode="lines",
+                                                             line=dict(color="#1f77b4", width=2)))
+                                    fig.update_layout(height=220, margin=dict(t=10, b=10, l=0, r=0),
+                                                      xaxis_title="날짜", yaxis_title="USD")
+                                    st.plotly_chart(fig, use_container_width=True)
+                            else:
+                                d_end = datetime.today()
+                                d_start = d_end - timedelta(days=90)
+                                d_data = fdr.DataReader(ticker, d_start, d_end)
+                                if d_data is not None and len(d_data) > 1:
+                                    d_price = float(d_data["Close"].iloc[-1])
+                                    d_prev = float(d_data["Close"].iloc[-2])
+                                    d_chg = (d_price - d_prev) / d_prev * 100
+                                    dc1, dc2, dc3 = st.columns(3)
+                                    dc1.metric("현재가", f"₩{d_price:,.0f}", f"{'+' if d_chg>0 else ''}{d_chg:.2f}%")
+                                    dc2.metric("3개월 최고", f"₩{float(d_data['Close'].max()):,.0f}")
+                                    dc3.metric("3개월 최저", f"₩{float(d_data['Close'].min()):,.0f}")
+                                    fig = go.Figure()
+                                    fig.add_trace(go.Scatter(x=d_data.index, y=d_data["Close"], mode="lines",
+                                                             line=dict(color="#e53935", width=2)))
+                                    fig.update_layout(height=220, margin=dict(t=10, b=10, l=0, r=0),
+                                                      xaxis_title="날짜", yaxis_title="원")
+                                    st.plotly_chart(fig, use_container_width=True)
+                        except Exception:
+                            st.caption("데이터를 불러올 수 없어요.")
+
                 st.divider()
 
         if st.button("🔄 전체 가격 새로고침", use_container_width=True):
@@ -846,9 +893,11 @@ elif page == "📊 주식 정보":
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-                if st.button(f"🤖 AI가 {us_ticker} 쉽게 설명해줘", key="us_explain"):
-                    with st.spinner("AI 분석 중..."):
-                        prompt = f"""
+                btn_col1, btn_col2 = st.columns([1, 1])
+                with btn_col1:
+                    if st.button(f"🤖 AI가 {us_ticker} 쉽게 설명해줘", key="us_explain", use_container_width=True):
+                        with st.spinner("AI 분석 중..."):
+                            prompt = f"""
 미국 주식 {name}({us_ticker})에 대해 주식 왕초보에게 설명해주세요.
 현재가: ${price:.2f}, 전일 대비: {change_pct:.2f}%
 PER: {info.get('trailingPE', 'N/A')}
@@ -858,8 +907,20 @@ PER: {info.get('trailingPE', 'N/A')}
 2. 현재 주가가 어떤 상황인지 (쉽게)
 3. 초보자가 알아야 할 주의사항
 """
-                        answer = ai_analyze(prompt)
-                    st.markdown(f'<div class="tip-box">{answer}</div>', unsafe_allow_html=True)
+                            answer = ai_analyze(prompt)
+                        st.markdown(f'<div class="tip-box">{answer}</div>', unsafe_allow_html=True)
+                with btn_col2:
+                    existing_tickers = [w["ticker"] for w in st.session_state.get("watchlist", load_watchlist(session_id))]
+                    if us_ticker in existing_tickers:
+                        st.button("⭐ 관심종목에 추가됨", key="us_watch_add", disabled=True, use_container_width=True)
+                    elif st.button("☆ 관심종목에 추가", key="us_watch_add", type="primary", use_container_width=True):
+                        with st.spinner("추가 중..."):
+                            ok, result = add_to_watchlist(us_ticker, "US", session_id)
+                        if ok:
+                            st.success(f"✅ {result} 관심종목에 추가됐어요!")
+                            st.rerun()
+                        else:
+                            st.info("이미 관심종목에 있어요!")
             else:
                 st.error(f"'{us_ticker}' 데이터를 찾을 수 없어요. 티커를 다시 확인해주세요.")
 
@@ -915,17 +976,32 @@ PER: {info.get('trailingPE', 'N/A')}
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-                if st.button("🤖 AI가 이 종목 쉽게 설명해줘", key="kr_explain"):
-                    with st.spinner("AI 분석 중..."):
-                        prompt = f"""
-한국 주식 종목코드 {kr_ticker}에 대해 주식 왕초보에게 설명해주세요.
+                kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
+                btn_col1, btn_col2 = st.columns([1, 1])
+                with btn_col1:
+                    if st.button("🤖 AI가 이 종목 쉽게 설명해줘", key="kr_explain", use_container_width=True):
+                        with st.spinner("AI 분석 중..."):
+                            prompt = f"""
+한국 주식 {kr_name}({kr_ticker})에 대해 주식 왕초보에게 설명해주세요.
 현재가: ₩{latest_price:,.0f}, 전일 대비: {change_pct:.2f}%
 3개월 범위: ₩{low_52:,.0f} ~ ₩{high_52:,.0f}
 1. 현재 주가 상황 (쉽게)
 2. 초보자가 한국 주식 볼 때 주의점
 """
-                        answer = ai_analyze(prompt)
-                    st.markdown(f'<div class="tip-box">{answer}</div>', unsafe_allow_html=True)
+                            answer = ai_analyze(prompt)
+                        st.markdown(f'<div class="tip-box">{answer}</div>', unsafe_allow_html=True)
+                with btn_col2:
+                    existing_tickers = [w["ticker"] for w in st.session_state.get("watchlist", load_watchlist(session_id))]
+                    if kr_ticker in existing_tickers:
+                        st.button("⭐ 관심종목에 추가됨", key="kr_watch_add", disabled=True, use_container_width=True)
+                    elif st.button("☆ 관심종목에 추가", key="kr_watch_add", type="primary", use_container_width=True):
+                        with st.spinner("추가 중..."):
+                            ok, result = add_to_watchlist(kr_ticker, "KR", session_id)
+                        if ok:
+                            st.success(f"✅ {result} 관심종목에 추가됐어요!")
+                            st.rerun()
+                        else:
+                            st.info("이미 관심종목에 있어요!")
             else:
                 st.error(f"'{kr_ticker}' 데이터를 찾을 수 없어요. 종목 코드를 다시 확인해주세요.")
 
