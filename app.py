@@ -533,12 +533,23 @@ def get_chosung(char):
     return char[0].upper() if char else "?"
 
 def extract_term_name(text):
-    """청크 텍스트에서 첫 번째 용어명 추출"""
+    """청크 텍스트에서 용어명 추출 (짧고 문장이 아닌 첫 줄)"""
+    sentence_endings = ('다.', '요.', '니다.', '어요.', '하다.', '이다.', '겠다.', '된다.')
     for line in text.split("\n"):
         line = line.strip()
-        if len(line) >= 2 and not (len(line) == 1 and 'ㄱ' <= line <= 'ㅎ'):
+        if not line or len(line) < 2:
+            continue
+        if len(line) == 1 and 'ㄱ' <= line <= 'ㅎ':
+            continue
+        # 짧고 문장 어미가 없으면 용어명으로 판단
+        if len(line) <= 30 and not any(line.endswith(e) for e in sentence_endings):
             return line
-    return ""
+    # 적절한 용어명 없으면 첫 줄 앞부분
+    for line in text.split("\n"):
+        line = line.strip()
+        if len(line) >= 2:
+            return line[:20] + "…"
+    return "내용 보기"
 
 # ── 페이지 1: 공부방 ──────────────────────────────────────────
 if page == "📚 공부방":
@@ -672,15 +683,13 @@ if page == "📚 공부방":
         st.markdown("---")
 
         # ── 용어 카드 표시
-        for chunk in filtered_kb[:80]:  # 최대 80개 표시
+        for i, chunk in enumerate(filtered_kb[:80]):  # 최대 80개 표시
             term_name = extract_term_name(chunk["text"])
-            if not term_name:
-                continue
             src_badge = chunk.get("source", "")[:10]
             with st.expander(f"**{term_name}** `{src_badge}`"):
                 st.markdown(chunk["text"][:600] + ("..." if len(chunk["text"]) > 600 else ""),
                             unsafe_allow_html=False)
-                if st.button(f"🤖 AI에게 더 쉽게 설명 요청", key=f"dict_ai_{term_name[:15]}"):
+                if st.button(f"🤖 AI에게 더 쉽게 설명 요청", key=f"dict_ai_{i}"):
                     st.session_state.pending_question = f"{term_name}이(가) 뭔가요? 왕초보에게 쉽게 설명해주세요."
                     st.rerun()
 
