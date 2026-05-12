@@ -216,11 +216,29 @@ def get_us_stock(ticker, period="6mo"):
         return None, None
 
 @st.cache_data(ttl=300)
+def get_us_stock_range(ticker, start_str, end_str):
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        hist = stock.history(start=start_str, end=end_str)
+        return info, hist
+    except Exception:
+        return None, None
+
+@st.cache_data(ttl=300)
 def get_kr_stock(ticker, days=180):
     try:
         end = datetime.today()
         start = end - timedelta(days=days)
         df = fdr.DataReader(ticker, start, end)
+        return df
+    except Exception:
+        return None
+
+@st.cache_data(ttl=300)
+def get_kr_stock_range(ticker, start_str, end_str):
+    try:
+        df = fdr.DataReader(ticker, start_str, end_str)
         return df
     except Exception:
         return None
@@ -1016,7 +1034,7 @@ elif page == "📊 주식 정보":
             us_ticker = popular_us[selected_popular]
 
         if us_ticker:
-            # 기간 선택
+            # ── 기간 버튼
             us_period_key = f"us_period_{us_ticker}"
             if us_period_key not in st.session_state:
                 st.session_state[us_period_key] = "6개월"
@@ -1028,11 +1046,37 @@ elif page == "📊 주식 정보":
                                  type="primary" if is_sel else "secondary",
                                  use_container_width=True):
                         st.session_state[us_period_key] = pname
+                        st.session_state.pop(f"us_custom_{us_ticker}", None)
                         st.rerun()
-            us_yf_period = PERIOD_MAP[st.session_state[us_period_key]]["yf"]
 
-            with st.spinner(f"{us_ticker} 데이터 불러오는 중..."):
-                info, hist = get_us_stock(us_ticker, us_yf_period)
+            # ── 날짜 직접 선택
+            with st.expander("📅 날짜 직접 선택"):
+                dc1, dc2, dc3 = st.columns([2, 2, 1])
+                with dc1:
+                    us_start = st.date_input("시작일", value=datetime.today() - timedelta(days=180),
+                                             min_value=datetime(2000, 1, 1), max_value=datetime.today(),
+                                             key=f"us_start_{us_ticker}")
+                with dc2:
+                    us_end = st.date_input("종료일", value=datetime.today(),
+                                           min_value=datetime(2000, 1, 1), max_value=datetime.today(),
+                                           key=f"us_end_{us_ticker}")
+                with dc3:
+                    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+                    if st.button("조회", key=f"us_custom_btn_{us_ticker}", type="primary", use_container_width=True):
+                        st.session_state[f"us_custom_{us_ticker}"] = (str(us_start), str(us_end))
+                        st.rerun()
+
+            # 커스텀 기간 vs 버튼 기간
+            us_custom = st.session_state.get(f"us_custom_{us_ticker}")
+            if us_custom:
+                us_period_label = f"{us_custom[0]} ~ {us_custom[1]}"
+                with st.spinner(f"{us_ticker} 데이터 불러오는 중..."):
+                    info, hist = get_us_stock_range(us_ticker, us_custom[0], us_custom[1])
+            else:
+                us_yf_period = PERIOD_MAP[st.session_state[us_period_key]]["yf"]
+                us_period_label = st.session_state[us_period_key]
+                with st.spinner(f"{us_ticker} 데이터 불러오는 중..."):
+                    info, hist = get_us_stock(us_ticker, us_yf_period)
 
             if info and hist is not None and len(hist) > 0:
                 name = info.get("longName", us_ticker)
@@ -1047,7 +1091,7 @@ elif page == "📊 주식 정보":
                 m3.metric("52주 최저", f"${info.get('fiftyTwoWeekLow', 'N/A')}")
                 m4.metric("PER", f"{info.get('trailingPE', 'N/A'):.1f}" if isinstance(info.get('trailingPE'), float) else "N/A")
 
-                fig = make_candle_chart(hist, title=f"{us_ticker} ({st.session_state[us_period_key]})", currency="USD", height=450)
+                fig = make_candle_chart(hist, title=f"{us_ticker} ({us_period_label})", currency="USD", height=450)
                 st.plotly_chart(fig, use_container_width=True)
                 show_chart_tip()
 
@@ -1105,7 +1149,7 @@ PER: {info.get('trailingPE', 'N/A')}
             kr_ticker = popular_kr[selected_kr]
 
         if kr_ticker:
-            # 기간 선택
+            # ── 기간 버튼
             kr_period_key = f"kr_period_{kr_ticker}"
             if kr_period_key not in st.session_state:
                 st.session_state[kr_period_key] = "6개월"
@@ -1117,11 +1161,37 @@ PER: {info.get('trailingPE', 'N/A')}
                                  type="primary" if is_sel else "secondary",
                                  use_container_width=True):
                         st.session_state[kr_period_key] = pname
+                        st.session_state.pop(f"kr_custom_{kr_ticker}", None)
                         st.rerun()
-            kr_days = PERIOD_MAP[st.session_state[kr_period_key]]["days"]
 
-            with st.spinner(f"{kr_ticker} 데이터 불러오는 중..."):
-                kr_data = get_kr_stock(kr_ticker, kr_days)
+            # ── 날짜 직접 선택
+            with st.expander("📅 날짜 직접 선택"):
+                dc1, dc2, dc3 = st.columns([2, 2, 1])
+                with dc1:
+                    kr_start = st.date_input("시작일", value=datetime.today() - timedelta(days=180),
+                                             min_value=datetime(2000, 1, 1), max_value=datetime.today(),
+                                             key=f"kr_start_{kr_ticker}")
+                with dc2:
+                    kr_end = st.date_input("종료일", value=datetime.today(),
+                                           min_value=datetime(2000, 1, 1), max_value=datetime.today(),
+                                           key=f"kr_end_{kr_ticker}")
+                with dc3:
+                    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+                    if st.button("조회", key=f"kr_custom_btn_{kr_ticker}", type="primary", use_container_width=True):
+                        st.session_state[f"kr_custom_{kr_ticker}"] = (str(kr_start), str(kr_end))
+                        st.rerun()
+
+            # 커스텀 기간 vs 버튼 기간
+            custom_range = st.session_state.get(f"kr_custom_{kr_ticker}")
+            if custom_range:
+                period_label = f"{custom_range[0]} ~ {custom_range[1]}"
+                with st.spinner(f"{kr_ticker} 데이터 불러오는 중..."):
+                    kr_data = get_kr_stock_range(kr_ticker, custom_range[0], custom_range[1])
+            else:
+                kr_days = PERIOD_MAP[st.session_state[kr_period_key]]["days"]
+                period_label = st.session_state[kr_period_key]
+                with st.spinner(f"{kr_ticker} 데이터 불러오는 중..."):
+                    kr_data = get_kr_stock(kr_ticker, kr_days)
 
             if kr_data is not None and len(kr_data) > 1:
                 kr_name = get_krx_name_map().get(kr_ticker.zfill(6), kr_ticker)
@@ -1130,13 +1200,12 @@ PER: {info.get('trailingPE', 'N/A')}
                 change_pct = (latest_price - prev_price) / prev_price * 100
                 high_52 = float(kr_data["Close"].max())
                 low_52 = float(kr_data["Close"].min())
-                period_label = st.session_state[kr_period_key]
 
                 st.markdown(f"#### {kr_name} ({kr_ticker})")
                 m1, m2, m3 = st.columns(3)
                 m1.metric("현재가", f"₩{latest_price:,.0f}", f"{'+' if change_pct>0 else ''}{change_pct:.2f}%")
-                m2.metric(f"{period_label} 최고", f"₩{high_52:,.0f}")
-                m3.metric(f"{period_label} 최저", f"₩{low_52:,.0f}")
+                m2.metric("기간 최고", f"₩{high_52:,.0f}")
+                m3.metric("기간 최저", f"₩{low_52:,.0f}")
 
                 fig = make_candle_chart(kr_data, title=f"{kr_name} ({period_label})", currency="KRW", height=450)
                 st.plotly_chart(fig, use_container_width=True)
