@@ -51,7 +51,7 @@ st.markdown("""
 html, body, p, span, div, h1, h2, h3, h4, h5, h6,
 label, li, td, th, caption, input, textarea, select, button {
     font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif !important;
-    letter-spacing: -0.03em !important;
+    letter-spacing: -0.02em !important;
 }
 
 /* ── 사이드바 ── */
