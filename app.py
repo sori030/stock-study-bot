@@ -632,65 +632,52 @@ if page == "📚 공부방":
     # ══ 탭2: 경제용어 사전 ════════════════════════════════════
     with tab_dict:
         st.markdown("### 📖 경제·금융 용어 사전")
-        st.caption("한국은행 경제금융용어 800선 · 알기 쉬운 경제이야기 · 대학생을 위한 금융 첫걸음")
+        st.caption("한국은행 경제금융용어 800선 — 용어를 클릭하면 설명을 볼 수 있어요")
 
-        kb_all = load_knowledge_base()
+        @st.cache_resource
+        def load_dictionary():
+            path = os.path.join(os.path.dirname(__file__), "dictionary.json")
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return []
 
-        # ── 출처 분류 탭
-        src_labels = {
-            "전체": None,
-            "📘 경제금융용어": "한국은행 경제금융용어 800선",
-            "📗 경제이야기": "알기 쉬운 경제이야기",
-            "📙 금융 첫걸음": "대학생을 위한 금융 첫걸음",
-        }
-        if "dict_src" not in st.session_state:
-            st.session_state.dict_src = "전체"
+        dict_all = load_dictionary()
 
-        src_cols = st.columns(len(src_labels))
-        for si, slabel in enumerate(src_labels):
-            with src_cols[si]:
-                is_sel = st.session_state.dict_src == slabel
-                if st.button(slabel, key=f"src_{slabel}", use_container_width=True,
-                             type="primary" if is_sel else "secondary"):
-                    st.session_state.dict_src = slabel
-                    st.session_state.pop("dict_cho", None)
-                    st.rerun()
-
-        src_filter = src_labels[st.session_state.dict_src]
-        filtered_kb = [c for c in kb_all if src_filter is None or c.get("source") == src_filter]
-
-        # ── 초성 필터 (경제금융용어 선택 시)
+        # ── 초성 필터
         CHOSUNGS_LIST = ["전체", "ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
-        if st.session_state.dict_src in ("전체", "📘 경제금융용어"):
-            if "dict_cho" not in st.session_state:
-                st.session_state.dict_cho = "전체"
-            cho_cols = st.columns(len(CHOSUNGS_LIST))
-            for ci, cho in enumerate(CHOSUNGS_LIST):
-                with cho_cols[ci]:
-                    is_sel = st.session_state.dict_cho == cho
-                    if st.button(cho, key=f"cho_{cho}", use_container_width=True,
-                                 type="primary" if is_sel else "secondary"):
-                        st.session_state.dict_cho = cho
-                        st.rerun()
-            cho_filter = st.session_state.dict_cho
-            if cho_filter != "전체":
-                filtered_kb = [c for c in filtered_kb
-                               if get_chosung(extract_term_name(c["text"])[:1] or "?") == cho_filter]
-        else:
+        if "dict_cho" not in st.session_state:
             st.session_state.dict_cho = "전체"
 
-        st.markdown(f"**{len(filtered_kb)}개** 항목")
+        cho_cols = st.columns(len(CHOSUNGS_LIST))
+        for ci, cho in enumerate(CHOSUNGS_LIST):
+            with cho_cols[ci]:
+                is_sel = st.session_state.dict_cho == cho
+                if st.button(cho, key=f"cho_{cho}", use_container_width=True,
+                             type="primary" if is_sel else "secondary"):
+                    st.session_state.dict_cho = cho
+                    st.rerun()
+
+        cho_filter = st.session_state.dict_cho
+        if cho_filter == "전체":
+            filtered = dict_all
+        else:
+            filtered = [t for t in dict_all if get_chosung(t["term"][0]) == cho_filter]
+
+        st.markdown(f"**{len(filtered)}개** 용어")
         st.markdown("---")
 
-        # ── 용어 카드 표시
-        for i, chunk in enumerate(filtered_kb[:80]):  # 최대 80개 표시
-            term_name = extract_term_name(chunk["text"])
-            src_badge = chunk.get("source", "")[:10]
-            with st.expander(f"**{term_name}** `{src_badge}`"):
-                st.markdown(chunk["text"][:600] + ("..." if len(chunk["text"]) > 600 else ""),
-                            unsafe_allow_html=False)
-                if st.button(f"🤖 AI에게 더 쉽게 설명 요청", key=f"dict_ai_{i}"):
-                    st.session_state.pending_question = f"{term_name}이(가) 뭔가요? 왕초보에게 쉽게 설명해주세요."
+        # ── 용어 카드 표시 (초성 전체면 50개씩, 필터 시 전체)
+        show_items = filtered if cho_filter != "전체" else filtered[:50]
+        if cho_filter == "전체":
+            st.caption("💡 초성 버튼을 눌러 원하는 용어를 찾아보세요! (전체 표시 시 50개만 미리보기)")
+
+        for i, item in enumerate(show_items):
+            with st.expander(f"**{item['term']}**"):
+                st.write(item["text"])
+                if st.button("🤖 AI에게 더 쉽게 설명 요청", key=f"dict_ai_{i}"):
+                    st.session_state.pending_question = f"{item['term']}이(가) 뭔가요? 왕초보에게 쉽게 설명해주세요."
                     st.rerun()
 
 # ── 페이지 2: 경제 뉴스 ──────────────────────────────────────
