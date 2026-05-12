@@ -74,13 +74,42 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
 [data-testid="stSidebar"] hr {
     border-color: #334155 !important;
 }
-[data-testid="stSidebar"] .stRadio label {
-    padding: 6px 10px;
-    border-radius: 8px;
-    transition: background 0.15s;
+/* ── 사이드바 카드형 네비게이션 ── */
+[data-testid="stRadio"] > div {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
 }
-[data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(255,255,255,0.08) !important;
+/* 라디오 동그라미 숨기기 */
+[data-testid="stRadio"] [data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+/* 카드 스타일 */
+[data-testid="stRadio"] [data-baseweb="radio"] {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 10px !important;
+    padding: 10px 14px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+    transition: all 0.18s ease !important;
+    width: 100% !important;
+}
+/* 호버 */
+[data-testid="stRadio"] [data-baseweb="radio"]:hover {
+    background: rgba(255,255,255,0.1) !important;
+    border-color: rgba(255,255,255,0.22) !important;
+    transform: translateX(2px) !important;
+}
+/* 선택된 카드 */
+[data-testid="stRadio"] [aria-checked="true"] {
+    background: rgba(59,130,246,0.2) !important;
+    border-color: #3b82f6 !important;
+    border-left: 3px solid #60a5fa !important;
+}
+[data-testid="stRadio"] [aria-checked="true"] p {
+    color: #93c5fd !important;
+    font-weight: 700 !important;
 }
 [data-testid="stSidebar"] [data-testid="stInfo"] {
     background: rgba(255,255,255,0.06) !important;
