@@ -267,6 +267,39 @@ PERIOD_MAP = {
 }
 
 @st.cache_data(ttl=300)
+def get_usdkrw():
+    """달러/원 환율 조회"""
+    try:
+        rate = yf.Ticker("USDKRW=X").history(period="1d")
+        if rate is not None and len(rate) > 0:
+            return float(rate["Close"].iloc[-1])
+    except Exception:
+        pass
+    return 1380.0  # 조회 실패 시 기본값
+
+@st.cache_data(ttl=300)
+def get_current_price(ticker, market):
+    """현재가 조회 (US: USD, KR: KRW)"""
+    try:
+        if market == "KR":
+            end = datetime.today()
+            start = end - timedelta(days=5)
+            df = fdr.DataReader(ticker, start, end)
+            if df is not None and len(df) > 0:
+                return float(df["Close"].iloc[-1])
+        else:
+            info, hist = get_us_stock(ticker, "5d")
+            if info:
+                p = info.get("currentPrice") or info.get("regularMarketPrice")
+                if p:
+                    return float(p)
+            if hist is not None and len(hist) > 0:
+                return float(hist["Close"].iloc[-1])
+    except Exception:
+        pass
+    return None
+
+@st.cache_data(ttl=300)
 def get_us_stock(ticker, period="6mo"):
     try:
         stock = yf.Ticker(ticker)
@@ -1595,43 +1628,81 @@ elif page == "📓 투자 일지":
 
         # ══ 종목별 묶음 탭 ════════════════════════════════════
         with tab_grouped:
-            # 종목별 그룹화
+            usdkrw = get_usdkrw()
+            st.caption(f"💱 현재 환율: $1 = ₩{usdkrw:,.0f}  |  현재가 기준 평가손익")
+
             ticker_order = list(dict.fromkeys(t["ticker"] for t in st.session_state.journal))
             for tk in ticker_order:
                 tk_trades = [t for t in st.session_state.journal if t["ticker"] == tk]
-                buys = [t for t in tk_trades if t["type"] == "매수"]
+                buys  = [t for t in tk_trades if t["type"] == "매수"]
                 sells = [t for t in tk_trades if t["type"] == "매도"]
-                flag = "🇰🇷" if tk_trades[0]["market"] == "KR" else "🇺🇸"
-                currency = "₩" if tk_trades[0]["market"] == "KR" else "$"
+                market = tk_trades[0]["market"]
+                flag     = "🇰🇷" if market == "KR" else "🇺🇸"
+                currency = "₩" if market == "KR" else "$"
                 name = tk_trades[0]["name"]
 
-                total_buy_qty = sum(t["quantity"] for t in buys)
+                total_buy_qty  = sum(t["quantity"] for t in buys)
                 total_sell_qty = sum(t["quantity"] for t in sells)
+                hold_qty = total_buy_qty - total_sell_qty
                 avg_buy = (sum(t["price"] * t["quantity"] for t in buys) / total_buy_qty) if buys else 0
-                avg_sell = (sum(t["price"] * t["quantity"] for t in sells) / total_sell_qty) if sells else 0
-                total_invested = sum(t["amount"] for t in buys)
+                total_invested = avg_buy * total_buy_qty
 
-                # 손익 (매도 있을 때)
-                pnl_str = ""
-                if sells and buys:
-                    pnl = (avg_sell - avg_buy) * total_sell_qty
-                    pnl_pct = (avg_sell - avg_buy) / avg_buy * 100
-                    color = "#e53935" if pnl >= 0 else "#1565c0"
-                    sign = "+" if pnl >= 0 else ""
-                    pnl_str = f' | <span style="color:{color};font-weight:bold">{sign}{pnl_pct:.2f}% ({sign}{currency}{abs(pnl):,.2f})</span>'
+                # 현재가 & 평가손익
+                cur_price = get_current_price(tk, market)
+                if cur_price and hold_qty > 0:
+                    eval_val_native = cur_price * hold_qty          # 현재 평가금액 (원화 or USD)
+                    cost_native     = avg_buy * hold_qty            # 매수금액
+                    pnl_native      = eval_val_native - cost_native # 평가손익
+                    pnl_pct         = pnl_native / cost_native * 100 if cost_native else 0
+                    # 원화 환산 (미국주식)
+                    if market == "US":
+                        eval_val_krw = eval_val_native * usdkrw
+                        pnl_krw      = pnl_native * usdkrw
+                    else:
+                        eval_val_krw = eval_val_native
+                        pnl_krw      = pnl_native
+                    pnl_color = "#e53935" if pnl_pct >= 0 else "#1565c0"
+                    sign = "+" if pnl_pct >= 0 else ""
+                    price_str = f"{currency}{cur_price:,.2f}"
+                    pnl_badge = (
+                        f'<span style="color:{pnl_color};font-weight:bold">'
+                        f'{sign}{pnl_pct:.2f}%</span>'
+                    )
+                else:
+                    eval_val_krw = pnl_krw = pnl_pct = None
+                    price_str = "조회 중..."
+                    pnl_badge = ""
 
-                label = (
-                    f"{flag} **{name}** ({tk}) &nbsp;|&nbsp; "
-                    f"매수 {len(buys)}회 · 평균 {currency}{avg_buy:,.2f} · {total_buy_qty}주"
-                    + (f" &nbsp;|&nbsp; 매도 {len(sells)}회 · {total_sell_qty}주" if sells else "")
-                    + pnl_str
-                )
+                label = f"{flag} **{name}** ({tk}) &nbsp;|&nbsp; 현재가 {price_str} &nbsp; {pnl_badge}"
                 with st.expander(label, expanded=False):
-                    sub1, sub2, sub3 = st.columns([1.5, 1.5, 1.5])
-                    sub1.metric("평균 매수가", f"{currency}{avg_buy:,.2f}")
-                    sub2.metric("총 매수금액", f"{currency}{total_invested:,.2f}")
-                    sub3.metric("보유 수량", f"{total_buy_qty - total_sell_qty}주")
+                    # ── 핵심 지표 카드
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("평균 매수가", f"{currency}{avg_buy:,.2f}")
+                    m2.metric("보유 수량", f"{hold_qty}주")
+                    if cur_price and hold_qty > 0:
+                        m3.metric("평가금액 (원화)", f"₩{eval_val_krw:,.0f}")
+                        delta_str = f"{sign}{pnl_pct:.2f}% (₩{pnl_krw:+,.0f})"
+                        m4.metric("평가손익", f"₩{pnl_krw:,.0f}", delta=delta_str)
+                    else:
+                        m3.metric("평가금액", "-")
+                        m4.metric("평가손익", "-")
 
+                    # ── 실현 손익 (매도 있을 때)
+                    if sells:
+                        avg_sell = sum(t["price"]*t["quantity"] for t in sells) / sum(t["quantity"] for t in sells)
+                        realized_pnl = (avg_sell - avg_buy) * total_sell_qty
+                        realized_pct = realized_pnl / (avg_buy * total_sell_qty) * 100
+                        r_color = "#e53935" if realized_pnl >= 0 else "#1565c0"
+                        r_sign  = "+" if realized_pnl >= 0 else ""
+                        realized_krw = realized_pnl * usdkrw if market == "US" else realized_pnl
+                        st.markdown(
+                            f'💰 **실현손익** (매도 {total_sell_qty}주): '
+                            f'<span style="color:{r_color};font-weight:bold">'
+                            f'{r_sign}{realized_pct:.2f}% (₩{realized_krw:+,.0f})</span>',
+                            unsafe_allow_html=True
+                        )
+
+                    st.markdown("---")
                     st.markdown("**거래 상세**")
                     for t in sorted(tk_trades, key=lambda x: x["date"]):
                         ttype_color = "#e53935" if t["type"] == "매수" else "#1565c0"
