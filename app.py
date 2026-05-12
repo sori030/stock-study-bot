@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 import pandas as pd
 import os
 import json
+import feedparser
+import requests
+import re
 from datetime import datetime, timedelta
 
 st.set_page_config(
@@ -88,7 +91,7 @@ with st.sidebar:
 
     page = st.radio(
         "메뉴",
-        ["📚 공부방", "📊 주식 정보", "🎯 나만의 전략"],
+        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "🎯 나만의 전략"],
         label_visibility="collapsed"
     )
 
@@ -288,7 +291,156 @@ if page == "📚 공부방":
             add_message("assistant", answer)
             st.rerun()
 
-# ── 페이지 2: 주식 정보 ───────────────────────────────────────
+# ── 페이지 2: 경제 뉴스 ──────────────────────────────────────
+elif page == "📰 경제 뉴스":
+    st.markdown('<div class="big-title">📰 오늘의 경제 뉴스</div>', unsafe_allow_html=True)
+    st.caption("최신 경제 뉴스를 왕초보 언어로 쉽게 설명해드려요")
+
+    # 네이버 API 키 확인
+    try:
+        naver_id = st.secrets.get("NAVER_CLIENT_ID", "")
+        naver_secret = st.secrets.get("NAVER_CLIENT_SECRET", "")
+    except:
+        naver_id, naver_secret = "", ""
+
+    @st.cache_data(ttl=1800)
+    def get_naver_news(query, display=5):
+        if not naver_id or not naver_secret:
+            return []
+        try:
+            url = "https://openapi.naver.com/v1/search/news.json"
+            headers = {
+                "X-Naver-Client-Id": naver_id,
+                "X-Naver-Client-Secret": naver_secret
+            }
+            params = {"query": query, "display": display, "sort": "date"}
+            res = requests.get(url, headers=headers, params=params, timeout=5)
+            items = res.json().get("items", [])
+            # HTML 태그 제거
+            for item in items:
+                item["title"] = re.sub(r"<[^>]+>", "", item["title"])
+                item["description"] = re.sub(r"<[^>]+>", "", item["description"])
+            return items
+        except:
+            return []
+
+    @st.cache_data(ttl=1800)
+    def get_yahoo_news():
+        try:
+            feed = feedparser.parse("https://feeds.finance.yahoo.com/rss/2.0/headline?region=US&lang=en-US")
+            return feed.entries[:6]
+        except:
+            return []
+
+    # AI 뉴스 브리핑 버튼
+    st.markdown("### 🤖 오늘의 AI 경제 브리핑")
+    st.caption("최신 뉴스를 AI가 왕초보 언어로 요약해드려요")
+
+    if st.button("📋 오늘 꼭 알아야 할 경제 뉴스 요약해줘!", use_container_width=True, type="primary"):
+        kr_news = get_naver_news("경제 주식 금리", display=5)
+        us_news = get_yahoo_news()
+
+        kr_titles = "\n".join([f"- {n['title']}" for n in kr_news[:5]]) if kr_news else "뉴스를 불러올 수 없습니다"
+        us_titles = "\n".join([f"- {e.get('title','')}" for e in us_news[:5]]) if us_news else "뉴스를 불러올 수 없습니다"
+
+        with st.spinner("AI가 뉴스 읽고 요약 중... ✏️"):
+            prompt = f"""
+오늘의 경제 뉴스를 주식 왕초보에게 쉽게 설명해주세요.
+
+한국 경제 뉴스:
+{kr_titles}
+
+미국 경제 뉴스:
+{us_titles}
+
+다음 형식으로 작성해주세요:
+
+## 📌 오늘의 핵심 3줄 요약
+(가장 중요한 내용 3가지를 아주 쉽게)
+
+## 🇰🇷 한국 경제 오늘 포인트
+(한국 뉴스 중 주식 초보자가 알아야 할 것, 쉽게)
+
+## 🇺🇸 미국 경제 오늘 포인트
+(미국 뉴스 중 주식 초보자가 알아야 할 것, 쉽게)
+
+## 💡 초보자를 위한 한마디
+(오늘 뉴스를 보고 초보 투자자가 기억할 것 한 가지)
+
+모든 내용은 중학생도 이해하는 말로 써주세요.
+"""
+            summary = ai_analyze(prompt)
+        st.markdown(f'<div class="tip-box">{summary}</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # 한국/미국 뉴스 탭
+    tab_kr, tab_us = st.tabs(["🇰🇷 한국 경제 뉴스", "🇺🇸 미국 경제 뉴스"])
+
+    with tab_kr:
+        if not naver_id:
+            st.warning("⚠️ 네이버 API 키가 없어요. 아래 안내를 따라 설정해주세요.")
+            st.markdown("""
+            <div class="tip-box">
+            <b>네이버 API 키 설정 방법:</b><br>
+            1. <a href="https://developers.naver.com/apps/#/register" target="_blank">네이버 개발자센터</a> 접속<br>
+            2. 애플리케이션 등록 → 검색 API 선택<br>
+            3. Client ID, Client Secret 복사<br>
+            4. Streamlit Cloud → Manage app → Settings → Secrets 에 추가:<br>
+            <code>NAVER_CLIENT_ID = "여기에입력"</code><br>
+            <code>NAVER_CLIENT_SECRET = "여기에입력"</code>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            keywords = st.selectbox(
+                "뉴스 주제 선택",
+                ["경제 주식 금리", "코스피 코스닥", "환율 달러", "삼성전자 반도체", "부동산 금리"]
+            )
+            with st.spinner("뉴스 불러오는 중..."):
+                news_items = get_naver_news(keywords, display=8)
+
+            if news_items:
+                for item in news_items:
+                    with st.expander(f"📄 {item['title']}"):
+                        st.caption(item.get("pubDate", "")[:25])
+                        st.write(item.get("description", ""))
+                        col_a, col_b = st.columns([1, 3])
+                        with col_a:
+                            if st.button("🤖 쉽게 설명해줘", key=f"kr_news_{item['title'][:20]}"):
+                                with st.spinner("설명 중..."):
+                                    answer = ai_analyze(f"다음 뉴스를 주식 왕초보에게 쉽게 설명해주세요:\n제목: {item['title']}\n내용: {item['description']}")
+                                st.info(answer)
+                        with col_b:
+                            st.markdown(f"[원문 보기]({item.get('link', '#')})")
+            else:
+                st.info("뉴스를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
+
+    with tab_us:
+        with st.spinner("미국 뉴스 불러오는 중..."):
+            us_entries = get_yahoo_news()
+
+        if us_entries:
+            for entry in us_entries:
+                title = entry.get("title", "")
+                summary = entry.get("summary", "")
+                link = entry.get("link", "#")
+                published = entry.get("published", "")[:25] if entry.get("published") else ""
+
+                with st.expander(f"📄 {title}"):
+                    st.caption(published)
+                    st.write(summary[:200] + "..." if len(summary) > 200 else summary)
+                    col_a, col_b = st.columns([1, 3])
+                    with col_a:
+                        if st.button("🤖 한국어로 쉽게 설명해줘", key=f"us_news_{title[:20]}"):
+                            with st.spinner("번역 & 설명 중..."):
+                                answer = ai_analyze(f"다음 미국 경제 뉴스를 한국어로 번역하고 주식 왕초보에게 쉽게 설명해주세요:\n제목: {title}\n내용: {summary}")
+                            st.info(answer)
+                    with col_b:
+                        st.markdown(f"[원문 보기]({link})")
+        else:
+            st.info("미국 뉴스를 불러올 수 없어요. 잠시 후 다시 시도해주세요.")
+
+# ── 페이지 3: 주식 정보 ───────────────────────────────────────
 elif page == "📊 주식 정보":
     st.markdown('<div class="big-title">📊 실시간 주식 정보</div>', unsafe_allow_html=True)
     st.caption("실제 주식 데이터를 보면서 공부해요. 데이터는 Yahoo Finance / FinanceDataReader 제공 (무료)")
