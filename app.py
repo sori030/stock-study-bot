@@ -601,10 +601,34 @@ elif page == "⭐ 관심 종목":
     else:
         # ── 태그 필터 ──
         all_tags = list(dict.fromkeys([w.get("tag", "기타") for w in st.session_state.watchlist]))
-        filter_options = ["전체 보기"] + all_tags
-        selected_filter = st.radio("태그 필터", filter_options, horizontal=True, label_visibility="collapsed")
+        filter_options = ["전체"] + all_tags
 
-        filtered = st.session_state.watchlist if selected_filter == "전체 보기" \
+        if "selected_filter" not in st.session_state:
+            st.session_state.selected_filter = "전체"
+
+        st.markdown("**태그 필터**")
+        filter_cols = st.columns(len(filter_options))
+        for idx, opt in enumerate(filter_options):
+            with filter_cols[idx]:
+                color = TAG_COLORS.get(opt, "#607D8B") if opt != "전체" else "#333333"
+                is_selected = st.session_state.selected_filter == opt
+                border = f"3px solid {color}" if is_selected else "2px solid #ddd"
+                bg = color if is_selected else "white"
+                text_color = "white" if is_selected else color if opt != "전체" else "#333"
+                st.markdown(
+                    f'<div style="border:{border};background:{bg};color:{text_color};'
+                    f'padding:6px 0;border-radius:20px;text-align:center;font-weight:bold;'
+                    f'font-size:0.85rem;cursor:pointer">{opt}</div>',
+                    unsafe_allow_html=True
+                )
+                if st.button(opt, key=f"filter_{opt}", use_container_width=True, label_visibility="collapsed"):
+                    st.session_state.selected_filter = opt
+                    st.rerun()
+
+        selected_filter = st.session_state.selected_filter
+        st.markdown("---")
+
+        filtered = st.session_state.watchlist if selected_filter == "전체" \
             else [w for w in st.session_state.watchlist if w.get("tag", "기타") == selected_filter]
 
         st.markdown(f"### 📋 {selected_filter} ({len(filtered)}개)")
