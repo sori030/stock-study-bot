@@ -107,6 +107,27 @@ def clear_history(session_id):
     if os.path.exists(path):
         os.remove(path)
 
+# ── 투자 일지 저장/불러오기 ──────────────────────────────────
+def get_journal_file(session_id):
+    return os.path.join(HISTORY_DIR, f"journal_{session_id}.json")
+
+def load_journal(session_id):
+    path = get_journal_file(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_journal(session_id, journal):
+    try:
+        with open(get_journal_file(session_id), "w", encoding="utf-8") as f:
+            json.dump(journal, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 def build_gemini_history(messages):
     history = []
     for msg in messages:
@@ -156,7 +177,7 @@ with st.sidebar:
 
     page = st.radio(
         "메뉴",
-        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "🎯 나만의 전략"],
+        ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략"],
         label_visibility="collapsed"
     )
 
@@ -1368,6 +1389,198 @@ PER: {info.get('trailingPE', 'N/A')}
                             st.info("이미 관심종목에 있어요!")
             else:
                 st.error(f"'{kr_ticker}' 데이터를 찾을 수 없어요. 종목 코드를 다시 확인해주세요.")
+
+# ── 페이지 5: 투자 일지 ──────────────────────────────────────
+elif page == "📓 투자 일지":
+    st.markdown('<div class="big-title">📓 나의 투자 일지</div>', unsafe_allow_html=True)
+    st.caption("매수·매도 기록을 남기고 AI가 내 투자 패턴을 분석해드려요")
+
+    if "journal" not in st.session_state:
+        st.session_state.journal = load_journal(session_id)
+
+    # ── 거래 입력 폼 ──
+    st.markdown("### ✏️ 거래 기록 추가")
+    with st.form(key="journal_form", clear_on_submit=True):
+        jc1, jc2, jc3 = st.columns([2, 1, 1])
+        with jc1:
+            j_ticker = st.text_input("종목 코드", placeholder="예: 005930, AAPL")
+        with jc2:
+            j_market = st.selectbox("시장", ["🇰🇷 한국", "🇺🇸 미국"])
+        with jc3:
+            j_type = st.selectbox("거래 유형", ["매수", "매도"])
+
+        jc4, jc5, jc6 = st.columns([2, 1, 1])
+        with jc4:
+            j_date = st.date_input("거래일", value=datetime.today())
+        with jc5:
+            j_price = st.number_input("거래 가격", min_value=0.0, step=0.01, format="%.2f")
+        with jc6:
+            j_qty = st.number_input("수량 (주)", min_value=1, step=1, value=1)
+
+        j_memo = st.text_input("메모 (선택)", placeholder="예: 실적 발표 전 매수, 목표가 도달 매도")
+        j_submitted = st.form_submit_button("기록 추가", use_container_width=True, type="primary")
+
+    if j_submitted and j_ticker and j_price > 0:
+        market_tag = "KR" if "한국" in j_market else "US"
+        ticker = j_ticker.strip().upper() if market_tag == "US" else j_ticker.strip()
+        # 종목명 조회
+        if market_tag == "KR":
+            name = get_krx_name_map().get(ticker.zfill(6), ticker)
+        else:
+            try:
+                name = yf.Ticker(ticker).info.get("shortName", ticker)
+            except Exception:
+                name = ticker
+        entry = {
+            "id": str(uuid.uuid4())[:8],
+            "ticker": ticker,
+            "name": name,
+            "market": market_tag,
+            "type": j_type,
+            "date": str(j_date),
+            "price": j_price,
+            "quantity": int(j_qty),
+            "amount": round(j_price * j_qty, 2),
+            "memo": j_memo,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        st.session_state.journal.insert(0, entry)
+        save_journal(session_id, st.session_state.journal)
+        flag = "🇰🇷" if market_tag == "KR" else "🇺🇸"
+        currency = "₩" if market_tag == "KR" else "$"
+        st.success(f"✅ {flag} {name} {j_type} {j_qty}주 @ {currency}{j_price:,.2f} 기록됐어요!")
+        st.rerun()
+
+    st.markdown("---")
+
+    if not st.session_state.journal:
+        st.markdown("""
+        <div class="tip-box">
+        💡 <b>이렇게 사용해보세요!</b><br>
+        • 매수할 때마다 기록 → 평균 매수가 자동 계산<br>
+        • 매도 후 기록 → 수익률 자동 계산<br>
+        • AI 분석 → 내 투자 패턴의 장단점 피드백
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # ── 요약 통계 ──
+        st.markdown("### 📊 거래 요약")
+        total_trades = len(st.session_state.journal)
+        buy_trades = [t for t in st.session_state.journal if t["type"] == "매수"]
+        sell_trades = [t for t in st.session_state.journal if t["type"] == "매도"]
+        total_invested = sum(t["amount"] for t in buy_trades)
+        total_sold = sum(t["amount"] for t in sell_trades)
+
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1.metric("총 거래 횟수", f"{total_trades}회")
+        sc2.metric("매수 횟수", f"{len(buy_trades)}회")
+        sc3.metric("매도 횟수", f"{len(sell_trades)}회")
+        realized = total_sold - sum(
+            t["amount"] for t in buy_trades
+            if any(s["ticker"] == t["ticker"] for s in sell_trades)
+        )
+        sc4.metric("총 매수금액", f"{'₩' if any(t['market']=='KR' for t in buy_trades) else ''}{total_invested:,.0f}")
+
+        st.markdown("---")
+
+        # ── AI 분석 버튼 ──
+        if st.button("🤖 내 투자 기록 AI 분석해줘", use_container_width=True, type="primary"):
+            with st.spinner("AI가 투자 패턴 분석 중..."):
+                records_text = "\n".join([
+                    f"- {t['date']} | {t['name']}({t['ticker']}) | {t['type']} | "
+                    f"{'₩' if t['market']=='KR' else '$'}{t['price']:,.2f} × {t['quantity']}주 "
+                    f"| 메모: {t['memo'] or '없음'}"
+                    for t in st.session_state.journal
+                ])
+                analysis_prompt = f"""
+다음은 주식 왕초보의 실제 매수·매도 기록이에요. 분석해주세요.
+
+거래 내역:
+{records_text}
+
+다음 항목으로 분석해주세요:
+## 📌 투자 성향 분석
+(어떤 종목을 선호하는지, 단기/장기 성향 등)
+
+## ✅ 잘한 점
+(좋아 보이는 결정이나 패턴)
+
+## 💡 개선할 점
+(아쉬운 점이나 초보자가 주의할 것들)
+
+## 🎯 앞으로의 제안
+(이 투자 패턴에서 발전할 수 있는 방향)
+
+모든 설명은 왕초보도 이해하는 쉬운 말로, 격려하는 톤으로 써주세요.
+"""
+                analysis = ai_analyze(analysis_prompt)
+            st.markdown(f'<div class="strategy-box">{analysis}</div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── 거래 내역 테이블 ──
+        st.markdown("### 📋 거래 내역")
+
+        # 종목별 필터
+        tickers_in_journal = ["전체"] + list(dict.fromkeys(t["ticker"] for t in st.session_state.journal))
+        filter_ticker = st.selectbox("종목 필터", tickers_in_journal, label_visibility="collapsed")
+        filtered_journal = st.session_state.journal if filter_ticker == "전체" \
+            else [t for t in st.session_state.journal if t["ticker"] == filter_ticker]
+
+        # 헤더
+        hj1, hj2, hj3, hj4, hj5, hj6, hj7 = st.columns([1.2, 2, 1, 1.5, 1.2, 2, 0.8])
+        for col, label in zip([hj1,hj2,hj3,hj4,hj5,hj6,hj7],
+                               ["날짜","종목","구분","가격","수량","메모",""]):
+            col.markdown(f'<span style="font-size:0.78rem;color:#888;font-weight:bold">{label}</span>',
+                        unsafe_allow_html=True)
+        st.markdown("<hr style='margin:4px 0 8px 0;border-color:#ddd'>", unsafe_allow_html=True)
+
+        for idx, trade in enumerate(filtered_journal):
+            flag = "🇰🇷" if trade["market"] == "KR" else "🇺🇸"
+            currency = "₩" if trade["market"] == "KR" else "$"
+            type_color = "#e53935" if trade["type"] == "매수" else "#1565c0"
+
+            c1, c2, c3, c4, c5, c6, c7 = st.columns([1.2, 2, 1, 1.5, 1.2, 2, 0.8])
+            c1.caption(trade["date"])
+            c2.markdown(f"**{flag} {trade['name']}**")
+            c3.markdown(f'<span style="color:{type_color};font-weight:bold">{trade["type"]}</span>',
+                       unsafe_allow_html=True)
+            c4.markdown(f"`{currency}{trade['price']:,.2f}`")
+            c5.caption(f"{trade['quantity']}주")
+            c6.caption(trade["memo"] or "-")
+            with c7:
+                if st.button("삭제", key=f"del_journal_{idx}"):
+                    st.session_state.journal = [t for t in st.session_state.journal
+                                                if t["id"] != trade["id"]]
+                    save_journal(session_id, st.session_state.journal)
+                    st.rerun()
+
+        # 종목별 손익 계산 (매수+매도 둘 다 있는 경우)
+        tickers_with_both = set(
+            t["ticker"] for t in st.session_state.journal if t["type"] == "매수"
+        ) & set(
+            t["ticker"] for t in st.session_state.journal if t["type"] == "매도"
+        )
+        if tickers_with_both:
+            st.markdown("---")
+            st.markdown("### 💰 종목별 손익")
+            for tk in tickers_with_both:
+                buys = [t for t in st.session_state.journal if t["ticker"] == tk and t["type"] == "매수"]
+                sells = [t for t in st.session_state.journal if t["ticker"] == tk and t["type"] == "매도"]
+                avg_buy = sum(t["price"] * t["quantity"] for t in buys) / sum(t["quantity"] for t in buys)
+                avg_sell = sum(t["price"] * t["quantity"] for t in sells) / sum(t["quantity"] for t in sells)
+                sell_qty = sum(t["quantity"] for t in sells)
+                pnl = (avg_sell - avg_buy) * sell_qty
+                pnl_pct = (avg_sell - avg_buy) / avg_buy * 100
+                currency = "₩" if buys[0]["market"] == "KR" else "$"
+                color = "#e53935" if pnl >= 0 else "#1565c0"
+                sign = "+" if pnl >= 0 else ""
+                name = buys[0]["name"]
+                st.markdown(
+                    f'**{name}({tk})** — 평균 매수 {currency}{avg_buy:,.2f} → 평균 매도 {currency}{avg_sell:,.2f} | '
+                    f'<span style="color:{color};font-weight:bold">{sign}{pnl_pct:.2f}% ({sign}{currency}{abs(pnl):,.0f})</span>',
+                    unsafe_allow_html=True
+                )
 
 # ── 페이지 3: 나만의 전략 ─────────────────────────────────────
 elif page == "🎯 나만의 전략":
