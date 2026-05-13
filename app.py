@@ -204,6 +204,43 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
     background-clip: text;
 }
 .history-date { font-size: 0.75rem; color: #999; margin-top: 4px; }
+
+/* ── 스크랩북 카드 ── */
+.scrap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 12px; }
+.scrap-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s, transform 0.2s;
+    display: flex;
+    flex-direction: column;
+}
+.scrap-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.12); transform: translateY(-2px); }
+.scrap-card-thumb { width: 100%; height: 160px; object-fit: cover; background: #f1f5f9; }
+.scrap-card-thumb-placeholder {
+    width: 100%; height: 120px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; background: #f8fafc;
+}
+.scrap-card-body { padding: 14px 16px 10px; flex: 1; }
+.scrap-card-type {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+    padding: 2px 8px; border-radius: 20px; display: inline-block; margin-bottom: 6px;
+}
+.type-image { background: #dbeafe; color: #1d4ed8; }
+.type-url   { background: #dcfce7; color: #15803d; }
+.type-memo  { background: #fef3c7; color: #b45309; }
+.scrap-card-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin: 0 0 6px; line-height: 1.4; }
+.scrap-card-meta  { font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; }
+.scrap-card-summary { font-size: 0.82rem; color: #475569; line-height: 1.6; margin-bottom: 8px; }
+.scrap-tag {
+    display: inline-block; background: #f1f5f9; color: #64748b;
+    font-size: 0.7rem; border-radius: 20px; padding: 2px 9px; margin: 2px 2px 2px 0;
+}
+.scrap-card-footer { padding: 8px 16px 12px; border-top: 1px solid #f1f5f9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -294,6 +331,63 @@ def save_watchlist(session_id, watchlist):
     except Exception:
         pass
 
+# ── 스크랩북 저장/불러오기 ──────────────────────────────────
+def get_scraps_file(session_id):
+    return os.path.join(HISTORY_DIR, f"scraps_{session_id}.json")
+
+def load_scraps(session_id):
+    path = get_scraps_file(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_scraps(session_id, scraps):
+    try:
+        with open(get_scraps_file(session_id), "w", encoding="utf-8") as f:
+            json.dump(scraps, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def delete_scrap(session_id, scrap_id):
+    scraps = load_scraps(session_id)
+    scraps = [s for s in scraps if s.get("id") != scrap_id]
+    save_scraps(session_id, scraps)
+
+def fetch_url_meta(url):
+    """URL에서 제목, 설명, 썸네일 추출"""
+    meta = {"title": url, "description": "", "image": ""}
+    try:
+        # 유튜브 처리
+        yt_match = re.search(r"(?:youtube\.com/watch\?v=|youtu\.be/)([A-Za-z0-9_\-]{11})", url)
+        if yt_match:
+            vid = yt_match.group(1)
+            meta["image"] = f"https://img.youtube.com/vi/{vid}/hqdefault.jpg"
+            meta["is_youtube"] = True
+            meta["video_id"] = vid
+        # OG 태그 파싱
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=5)
+        html = resp.text
+        og_title = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']', html)
+        og_desc  = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']', html)
+        og_img   = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](.*?)["\']', html)
+        title_tag = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
+        if og_title:
+            meta["title"] = og_title.group(1)
+        elif title_tag:
+            meta["title"] = title_tag.group(1)
+        if og_desc:
+            meta["description"] = og_desc.group(1)[:200]
+        if og_img and not meta["image"]:
+            meta["image"] = og_img.group(1)
+    except Exception:
+        pass
+    return meta
+
 # ── 세션 ID 초기화 ───────────────────────────────────────────
 session_id = get_session_id()
 
@@ -313,7 +407,7 @@ with st.sidebar:
         st.markdown("[무료 발급받기](https://aistudio.google.com/app/apikey)")
         st.markdown("---")
 
-    menu_items = ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략"]
+    menu_items = ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략", "📎 스크랩북"]
     if "page" not in st.session_state:
         st.session_state.page = "📚 공부방"
 
@@ -2502,3 +2596,265 @@ elif page == "🎯 나만의 전략":
             with st.spinner("답변 중..."):
                 answer = ai_analyze(follow_up)
             st.markdown(f'<div class="tip-box">{answer}</div>', unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════
+# 📎 스크랩북
+# ══════════════════════════════════════════════════════════════
+elif page == "📎 스크랩북":
+    import base64
+
+    st.markdown("""
+    <div class="page-header">
+      <div class="icon">📎</div>
+      <h1>스크랩북</h1>
+      <p>영상·기사·이미지 캡쳐를 모아두고 AI 요약까지 한번에!</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── 세션 캐싱 ──────────────────────────────────────────────
+    if "scraps" not in st.session_state:
+        st.session_state.scraps = load_scraps(session_id)
+
+    # ─────────────────────────────────────────────────────────
+    # 새 스크랩 추가 폼
+    # ─────────────────────────────────────────────────────────
+    with st.expander("➕ 새 스크랩 추가", expanded=len(st.session_state.scraps) == 0):
+        scrap_type = st.radio(
+            "스크랩 종류",
+            ["📸 이미지", "🔗 링크", "📝 메모"],
+            horizontal=True,
+            key="scrap_type_radio"
+        )
+
+        scrap_title = st.text_input("제목 (선택)", placeholder="이 스크랩에 제목을 붙여보세요", key="scrap_title_input")
+        scrap_tags  = st.text_input("태그 (쉼표로 구분)", placeholder="예: ETF, 금리, 미국주식", key="scrap_tags_input")
+
+        # ── 타입별 입력 ──
+        scrap_content = ""
+        scrap_image_b64 = ""
+        scrap_thumb = ""
+        url_meta = {}
+
+        if scrap_type == "📸 이미지":
+            uploaded = st.file_uploader("이미지 파일 업로드", type=["png", "jpg", "jpeg", "gif", "webp"], key="scrap_img_uploader")
+            if uploaded:
+                img_bytes = uploaded.read()
+                scrap_image_b64 = base64.b64encode(img_bytes).decode()
+                ext = uploaded.name.split(".")[-1].lower()
+                mime = "image/gif" if ext == "gif" else "image/webp" if ext == "webp" else f"image/{ext}"
+                scrap_thumb = f"data:{mime};base64,{scrap_image_b64}"
+                st.image(uploaded, caption="미리보기", use_container_width=True)
+
+        elif scrap_type == "🔗 링크":
+            url_input = st.text_input("URL 입력", placeholder="https://...", key="scrap_url_input")
+            if url_input and url_input.startswith("http"):
+                scrap_content = url_input
+                with st.spinner("링크 정보 불러오는 중..."):
+                    url_meta = fetch_url_meta(url_input)
+                if url_meta.get("image"):
+                    st.image(url_meta["image"], width=200)
+                if url_meta.get("title") and url_meta["title"] != url_input:
+                    st.caption(f"📄 {url_meta['title']}")
+                if url_meta.get("description"):
+                    st.caption(url_meta["description"])
+
+        else:  # 📝 메모
+            scrap_content = st.text_area("메모 내용", placeholder="공부하면서 느낀 점, 중요한 내용을 자유롭게 기록하세요", height=120, key="scrap_memo_input")
+
+        # ── AI 요약 ──
+        want_ai = st.checkbox("🤖 AI 요약 생성 (링크·메모에 추천)", value=False, key="scrap_want_ai")
+
+        col_save, col_cancel = st.columns([1, 4])
+        with col_save:
+            save_btn = st.button("💾 저장", type="primary", use_container_width=True, key="scrap_save_btn")
+
+        if save_btn:
+            # 유효성 검사
+            content_ok = bool(scrap_image_b64 or scrap_content.strip())
+            if not content_ok:
+                st.warning("내용을 입력하거나 이미지를 업로드해주세요.")
+            else:
+                # 제목 자동 생성
+                auto_title = scrap_title.strip()
+                if not auto_title:
+                    if scrap_type == "📸 이미지":
+                        auto_title = f"이미지 스크랩 {datetime.now().strftime('%m/%d %H:%M')}"
+                    elif scrap_type == "🔗 링크":
+                        auto_title = url_meta.get("title", scrap_content)[:60] or scrap_content[:60]
+                    else:
+                        auto_title = scrap_content[:40] + ("..." if len(scrap_content) > 40 else "")
+
+                # AI 요약
+                ai_summary = ""
+                if want_ai:
+                    with st.spinner("AI가 요약 중..."):
+                        if scrap_type == "🔗 링크":
+                            summary_prompt = f"다음 링크 정보를 주식·경제 공부 관점에서 2~3줄로 요약해줘.\n제목: {url_meta.get('title','')}\n설명: {url_meta.get('description','')}\nURL: {scrap_content}"
+                        else:
+                            summary_prompt = f"다음 내용을 주식·경제 공부 관점에서 2~3줄로 핵심만 요약해줘:\n{scrap_content}"
+                        ai_summary = ai_analyze(summary_prompt)
+
+                # 태그 파싱
+                tags = [t.strip().lstrip("#") for t in scrap_tags.split(",") if t.strip()]
+
+                # 썸네일 (링크용)
+                if scrap_type == "🔗 링크":
+                    scrap_thumb = url_meta.get("image", "")
+
+                new_scrap = {
+                    "id": str(uuid.uuid4()),
+                    "type": scrap_type,
+                    "title": auto_title,
+                    "content": scrap_content,
+                    "image_b64": scrap_image_b64,
+                    "thumb": scrap_thumb,
+                    "tags": tags,
+                    "memo": "",
+                    "ai_summary": ai_summary,
+                    "url_meta": url_meta,
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }
+                st.session_state.scraps.insert(0, new_scrap)
+                save_scraps(session_id, st.session_state.scraps)
+                st.success("✅ 스크랩 저장 완료!")
+                st.rerun()
+
+    st.markdown("---")
+
+    # ─────────────────────────────────────────────────────────
+    # 필터 & 검색
+    # ─────────────────────────────────────────────────────────
+    all_scraps = st.session_state.scraps
+    all_tags = sorted({t for s in all_scraps for t in s.get("tags", [])})
+
+    fc1, fc2, fc3 = st.columns([2, 2, 1])
+    with fc1:
+        search_q = st.text_input("🔍 검색", placeholder="제목·내용·태그 검색", label_visibility="collapsed", key="scrap_search")
+    with fc2:
+        tag_filter = st.selectbox("🏷️ 태그 필터", ["전체"] + all_tags, key="scrap_tag_filter", label_visibility="collapsed")
+    with fc3:
+        type_filter = st.selectbox("종류", ["전체", "📸 이미지", "🔗 링크", "📝 메모"], key="scrap_type_filter", label_visibility="collapsed")
+
+    # 필터 적용
+    filtered = all_scraps
+    if search_q:
+        q = search_q.lower()
+        filtered = [s for s in filtered if q in s.get("title","").lower() or q in s.get("content","").lower() or any(q in t.lower() for t in s.get("tags",[]))]
+    if tag_filter != "전체":
+        filtered = [s for s in filtered if tag_filter in s.get("tags", [])]
+    if type_filter != "전체":
+        filtered = [s for s in filtered if s.get("type") == type_filter]
+
+    # ─────────────────────────────────────────────────────────
+    # 내보내기 / 불러오기
+    # ─────────────────────────────────────────────────────────
+    exp_col1, exp_col2, exp_col3 = st.columns([2, 2, 4])
+    with exp_col1:
+        if all_scraps:
+            export_data = json.dumps(all_scraps, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="⬇️ JSON 내보내기",
+                data=export_data,
+                file_name=f"scraps_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="scrap_export_btn"
+            )
+    with exp_col2:
+        import_file = st.file_uploader("⬆️ JSON 불러오기", type=["json"], key="scrap_import", label_visibility="collapsed")
+        if import_file:
+            try:
+                imported = json.load(import_file)
+                existing_ids = {s["id"] for s in st.session_state.scraps}
+                added = [s for s in imported if s.get("id") not in existing_ids]
+                st.session_state.scraps = added + st.session_state.scraps
+                save_scraps(session_id, st.session_state.scraps)
+                st.success(f"✅ {len(added)}개 스크랩을 불러왔어요!")
+                st.rerun()
+            except Exception:
+                st.error("JSON 파일 형식이 맞지 않아요.")
+
+    st.caption(f"총 {len(filtered)}개 스크랩" + (f" (전체 {len(all_scraps)}개 중)" if len(filtered) != len(all_scraps) else ""))
+
+    # ─────────────────────────────────────────────────────────
+    # 스크랩 카드 그리드
+    # ─────────────────────────────────────────────────────────
+    if not filtered:
+        if not all_scraps:
+            st.markdown("""
+            <div style="text-align:center; padding: 60px 20px; color: #94a3b8;">
+                <div style="font-size:3rem; margin-bottom:12px;">📎</div>
+                <p style="font-size:1.1rem; font-weight:600; color:#64748b;">아직 스크랩이 없어요</p>
+                <p style="font-size:0.88rem;">위에서 이미지·링크·메모를 추가해보세요!</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("검색 결과가 없어요.")
+    else:
+        # 3열 그리드
+        cols_per_row = 3
+        for row_start in range(0, len(filtered), cols_per_row):
+            row_scraps = filtered[row_start:row_start + cols_per_row]
+            cols = st.columns(cols_per_row)
+            for col, scrap in zip(cols, row_scraps):
+                with col:
+                    s_type = scrap.get("type", "📝 메모")
+                    type_class = "type-image" if "이미지" in s_type else "type-url" if "링크" in s_type else "type-memo"
+                    type_label = "이미지" if "이미지" in s_type else "링크" if "링크" in s_type else "메모"
+                    type_icon  = "📸" if "이미지" in s_type else "🔗" if "링크" in s_type else "📝"
+
+                    # 썸네일
+                    thumb_html = ""
+                    if scrap.get("image_b64"):
+                        img_data = scrap["image_b64"]
+                        thumb_html = f'<img src="data:image/jpeg;base64,{img_data}" class="scrap-card-thumb" />'
+                    elif scrap.get("thumb"):
+                        thumb_html = f'<img src="{scrap["thumb"]}" class="scrap-card-thumb" onerror="this.style.display=\'none\'" />'
+                    else:
+                        thumb_html = f'<div class="scrap-card-thumb-placeholder">{type_icon}</div>'
+
+                    # 태그
+                    tags_html = "".join(f'<span class="scrap-tag">#{t}</span>' for t in scrap.get("tags", []))
+
+                    # AI 요약
+                    summary = scrap.get("ai_summary", "")
+                    summary_html = f'<div class="scrap-card-summary">{summary[:150]}{"..." if len(summary)>150 else ""}</div>' if summary else ""
+
+                    # 링크 버튼
+                    link_html = ""
+                    if "링크" in s_type and scrap.get("content"):
+                        link_html = f'<a href="{scrap["content"]}" target="_blank" style="font-size:0.78rem; color:#3b82f6; text-decoration:none;">🔗 열기</a>'
+
+                    card_html = f"""
+                    <div class="scrap-card">
+                        {thumb_html}
+                        <div class="scrap-card-body">
+                            <span class="scrap-card-type {type_class}">{type_icon} {type_label}</span>
+                            <div class="scrap-card-title">{scrap.get("title","")}</div>
+                            <div class="scrap-card-meta">🕐 {scrap.get("created_at","")}</div>
+                            {summary_html}
+                            <div>{tags_html}</div>
+                        </div>
+                        <div class="scrap-card-footer">{link_html}</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+                    # 메모 + 삭제 (카드 아래 네이티브 버튼)
+                    with st.expander("✏️ 메모 / 🗑️ 삭제"):
+                        memo_key = f"memo_{scrap['id']}"
+                        memo_val = st.text_area("메모", value=scrap.get("memo", ""), key=memo_key, height=80, label_visibility="collapsed", placeholder="메모를 추가해보세요...")
+                        mc1, mc2 = st.columns(2)
+                        with mc1:
+                            if st.button("💾 메모 저장", key=f"save_memo_{scrap['id']}", use_container_width=True):
+                                for i, s in enumerate(st.session_state.scraps):
+                                    if s["id"] == scrap["id"]:
+                                        st.session_state.scraps[i]["memo"] = memo_val
+                                        break
+                                save_scraps(session_id, st.session_state.scraps)
+                                st.success("저장!")
+                        with mc2:
+                            if st.button("🗑️ 삭제", key=f"del_{scrap['id']}", use_container_width=True, type="secondary"):
+                                delete_scrap(session_id, scrap["id"])
+                                st.session_state.scraps = load_scraps(session_id)
+                                st.rerun()
