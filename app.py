@@ -388,6 +388,200 @@ def fetch_url_meta(url):
         pass
     return meta
 
+# ── Notion(노션) 연동 ────────────────────────────────────────
+def _get_notion_creds():
+    try:
+        key = os.environ.get("NOTION_API_KEY") or st.secrets.get("NOTION_API_KEY", "")
+        db  = os.environ.get("NOTION_DB_ID")   or st.secrets.get("NOTION_DB_ID",  "")
+        placeholder_key = "여기에_secret_토큰_붙여넣기"
+        placeholder_db  = "여기에_DB_아이디_붙여넣기"
+        if key and db and key != placeholder_key and db != placeholder_db:
+            return key, db
+    except Exception:
+        pass
+    return None, None
+
+def notion_is_configured():
+    k, d = _get_notion_creds()
+    return bool(k and d)
+
+def _notion_client():
+    k, _ = _get_notion_creds()
+    if not k:
+        return None
+    try:
+        from notion_client import Client
+        return Client(auth=k)
+    except Exception:
+        return None
+
+def ensure_notion_db_schema():
+    """데이터베이스(Database)에 필요한 속성(Property)이 없으면 자동 추가"""
+    notion = _notion_client()
+    _, db_id = _get_notion_creds()
+    if not notion or not db_id:
+        return
+    try:
+        db = notion.databases.retrieve(database_id=db_id)
+        existing = set(db["properties"].keys())
+        to_add = {}
+        if "종류" not in existing:
+            to_add["종류"] = {"select": {"options": [
+                {"name": "📸 이미지", "color": "blue"},
+                {"name": "🔗 링크",   "color": "green"},
+                {"name": "📝 메모",   "color": "yellow"},
+            ]}}
+        if "태그" not in existing:
+            to_add["태그"] = {"multi_select": {}}
+        if "날짜" not in existing:
+            to_add["날짜"] = {"date": {}}
+        if "URL" not in existing:
+            to_add["URL"] = {"url": {}}
+        if "AI요약" not in existing:
+            to_add["AI요약"] = {"rich_text": {}}
+        if "메모" not in existing:
+            to_add["메모"] = {"rich_text": {}}
+        if "ScrapID" not in existing:
+            to_add["ScrapID"] = {"rich_text": {}}
+        if to_add:
+            notion.databases.update(database_id=db_id, properties=to_add)
+    except Exception:
+        pass
+
+def save_scrap_to_notion(scrap):
+    """스크랩 1개를 노션 데이터베이스(Database)에 저장"""
+    notion = _notion_client()
+    _, db_id = _get_notion_creds()
+    if not notion or not db_id:
+        return False
+    try:
+        s_type  = scrap.get("type", "📝 메모")
+        content = scrap.get("content", "")
+        created = scrap.get("created_at", datetime.now().strftime("%Y-%m-%d"))
+        date_str = created[:10]  # "2026-05-13 04:20" → "2026-05-13"
+
+        properties = {
+            "제목":    {"title":        [{"text": {"content": scrap.get("title", "")[:2000]}}]},
+            "종류":    {"select":       {"name": s_type}},
+            "태그":    {"multi_select": [{"name": t[:100]} for t in scrap.get("tags", [])]},
+            "날짜":    {"date":         {"start": date_str}},
+            "AI요약":  {"rich_text":    [{"text": {"content": scrap.get("ai_summary", "")[:2000]}}]},
+            "메모":    {"rich_text":    [{"text": {"content": scrap.get("memo", "")[:2000]}}]},
+            "ScrapID": {"rich_text":    [{"text": {"content": scrap.get("id", "")}}]},
+        }
+        if "링크" in s_type and content:
+            properties["URL"] = {"url": content}
+
+        # 페이지(Page) 본문 블록(Block) 구성
+        children = []
+        if "링크" in s_type and scrap.get("thumb"):
+            children.append({"object": "block", "type": "image",
+                              "image": {"type": "external", "external": {"url": scrap["thumb"]}}})
+        if "링크" in s_type and content:
+            children.append({"object": "block", "type": "bookmark",
+                              "bookmark": {"url": content}})
+        if "메모" in s_type and content:
+            children.append({"object": "block", "type": "paragraph",
+                              "paragraph": {"rich_text": [{"text": {"content": content[:2000]}}]}})
+        if "이미지" in s_type:
+            children.append({"object": "block", "type": "callout",
+                              "callout": {"rich_text": [{"text": {"content": "📸 이미지 스크랩 (이미지 파일은 앱 내 로컬에 저장됩니다)"}}],
+                                          "icon": {"emoji": "📸"}}})
+        ai_sum = scrap.get("ai_summary", "")
+        if ai_sum:
+            children.append({"object": "block", "type": "callout",
+                              "callout": {"rich_text": [{"text": {"content": f"🤖 AI 요약\n{ai_sum[:1900]}"}}],
+                                          "icon": {"emoji": "🤖"}}})
+
+        notion.pages.create(parent={"database_id": db_id},
+                            properties=properties,
+                            children=children)
+        return True
+    except Exception:
+        return False
+
+def load_scraps_from_notion():
+    """노션 데이터베이스(Database)에서 스크랩 전체 불러오기"""
+    notion = _notion_client()
+    _, db_id = _get_notion_creds()
+    if not notion or not db_id:
+        return None  # None = 노션 미설정 (로컬 사용)
+
+    def _title(props, key):
+        return "".join(i.get("text", {}).get("content", "")
+                       for i in props.get(key, {}).get("title", []))
+    def _rt(props, key):
+        return "".join(i.get("text", {}).get("content", "")
+                       for i in props.get(key, {}).get("rich_text", []))
+    def _sel(props, key):
+        s = props.get(key, {}).get("select")
+        return s["name"] if s else ""
+    def _ms(props, key):
+        return [t["name"] for t in props.get(key, {}).get("multi_select", [])]
+    def _date(props, key):
+        d = props.get(key, {}).get("date")
+        return d["start"] if d else ""
+    def _url(props, key):
+        return props.get(key, {}).get("url") or ""
+
+    try:
+        all_pages, cursor = [], None
+        while True:
+            kwargs = dict(database_id=db_id,
+                          sorts=[{"property": "날짜", "direction": "descending"}],
+                          page_size=100)
+            if cursor:
+                kwargs["start_cursor"] = cursor
+            resp = notion.databases.query(**kwargs)
+            all_pages.extend(resp.get("results", []))
+            if not resp.get("has_more"):
+                break
+            cursor = resp.get("next_cursor")
+
+        scraps = []
+        for page in all_pages:
+            p = page["properties"]
+            scraps.append({
+                "id":             _rt(p, "ScrapID") or page["id"],
+                "notion_page_id": page["id"],
+                "type":           _sel(p, "종류") or "📝 메모",
+                "title":          _title(p, "제목"),
+                "tags":           _ms(p, "태그"),
+                "ai_summary":     _rt(p, "AI요약"),
+                "memo":           _rt(p, "메모"),
+                "content":        _url(p, "URL"),
+                "created_at":     _date(p, "날짜"),
+                "image_b64":      "",
+                "thumb":          "",
+                "url_meta":       {},
+            })
+        return scraps
+    except Exception:
+        return None
+
+def delete_scrap_from_notion(notion_page_id):
+    """노션 페이지(Page) 보관(Archive) 처리 = 삭제"""
+    notion = _notion_client()
+    if not notion or not notion_page_id:
+        return
+    try:
+        notion.pages.update(page_id=notion_page_id, archived=True)
+    except Exception:
+        pass
+
+def update_memo_in_notion(notion_page_id, memo):
+    """노션 페이지(Page)의 메모(Memo) 속성(Property) 업데이트"""
+    notion = _notion_client()
+    if not notion or not notion_page_id:
+        return
+    try:
+        notion.pages.update(
+            page_id=notion_page_id,
+            properties={"메모": {"rich_text": [{"text": {"content": memo[:2000]}}]}}
+        )
+    except Exception:
+        pass
+
 # ── 세션 ID 초기화 ───────────────────────────────────────────
 session_id = get_session_id()
 
@@ -2603,9 +2797,19 @@ elif page == "🎯 나만의 전략":
 elif page == "📎 스크랩북":
     import base64
 
-    # ── 세션 캐싱 ──────────────────────────────────────────────
-    if "scraps" not in st.session_state:
-        st.session_state.scraps = load_scraps(session_id)
+    # ── Notion(노션) 연동 여부 확인 ───────────────────────────
+    _use_notion = notion_is_configured()
+
+    # ── 세션 캐싱: Notion 우선, 없으면 로컬 ──────────────────
+    if "scraps" not in st.session_state or st.session_state.get("_scraps_source") != ("notion" if _use_notion else "local"):
+        if _use_notion:
+            ensure_notion_db_schema()
+            loaded = load_scraps_from_notion()
+            st.session_state.scraps = loaded if loaded is not None else []
+            st.session_state._scraps_source = "notion"
+        else:
+            st.session_state.scraps = load_scraps(session_id)
+            st.session_state._scraps_source = "local"
 
     all_scraps = st.session_state.scraps
 
@@ -2614,10 +2818,11 @@ elif page == "📎 스크랩북":
     # ─────────────────────────────────────────────────────────
     hdr_left, hdr_right = st.columns([3, 1])
     with hdr_left:
-        st.markdown("""
+        notion_badge = '<span style="background:#2ecc71;color:#fff;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:20px;margin-left:10px">🟢 Notion(노션) 연동됨</span>' if _use_notion else '<span style="background:#e2e8f0;color:#64748b;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:20px;margin-left:10px">📁 로컬 저장</span>'
+        st.markdown(f"""
         <div class="page-header">
           <div class="icon">📎</div>
-          <h1>스크랩북</h1>
+          <h1>스크랩북 {notion_badge}</h1>
           <p>영상·기사·이미지 캡쳐를 모아두고 AI 요약까지 한번에!</p>
         </div>
         """, unsafe_allow_html=True)
@@ -2740,9 +2945,22 @@ elif page == "📎 스크랩북":
                     "url_meta": url_meta,
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 }
-                st.session_state.scraps.insert(0, new_scrap)
-                save_scraps(session_id, st.session_state.scraps)
-                st.success("✅ 스크랩 저장 완료!")
+                # Notion(노션) 또는 로컬에 저장
+                if _use_notion:
+                    with st.spinner("노션(Notion)에 저장 중..."):
+                        ok = save_scrap_to_notion(new_scrap)
+                    if ok:
+                        st.success("✅ 노션(Notion)에 저장 완료!")
+                    else:
+                        st.warning("⚠️ 노션 저장 실패 — 로컬에 저장했어요.")
+                        save_scraps(session_id, st.session_state.scraps + [new_scrap])
+                    # 노션에서 최신 목록 다시 불러오기
+                    refreshed = load_scraps_from_notion()
+                    st.session_state.scraps = refreshed if refreshed is not None else []
+                else:
+                    st.session_state.scraps.insert(0, new_scrap)
+                    save_scraps(session_id, st.session_state.scraps)
+                    st.success("✅ 스크랩 저장 완료!")
                 st.rerun()
 
     st.markdown("---")
@@ -2838,14 +3056,22 @@ elif page == "📎 스크랩북":
                         mc1, mc2 = st.columns(2)
                         with mc1:
                             if st.button("💾 메모 저장", key=f"save_memo_{scrap['id']}", use_container_width=True):
-                                for i, s in enumerate(st.session_state.scraps):
-                                    if s["id"] == scrap["id"]:
-                                        st.session_state.scraps[i]["memo"] = memo_val
-                                        break
-                                save_scraps(session_id, st.session_state.scraps)
+                                if _use_notion:
+                                    update_memo_in_notion(scrap.get("notion_page_id"), memo_val)
+                                else:
+                                    for i, s in enumerate(st.session_state.scraps):
+                                        if s["id"] == scrap["id"]:
+                                            st.session_state.scraps[i]["memo"] = memo_val
+                                            break
+                                    save_scraps(session_id, st.session_state.scraps)
                                 st.success("저장!")
                         with mc2:
                             if st.button("🗑️ 삭제", key=f"del_{scrap['id']}", use_container_width=True, type="secondary"):
-                                delete_scrap(session_id, scrap["id"])
-                                st.session_state.scraps = load_scraps(session_id)
+                                if _use_notion:
+                                    delete_scrap_from_notion(scrap.get("notion_page_id"))
+                                    refreshed = load_scraps_from_notion()
+                                    st.session_state.scraps = refreshed if refreshed is not None else []
+                                else:
+                                    delete_scrap(session_id, scrap["id"])
+                                    st.session_state.scraps = load_scraps(session_id)
                                 st.rerun()
