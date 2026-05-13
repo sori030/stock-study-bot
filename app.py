@@ -405,15 +405,15 @@ def notion_is_configured():
     k, d = _get_notion_creds()
     return bool(k and d)
 
-def _notion_client():
+def _notion_headers():
     k, _ = _get_notion_creds()
     if not k:
         return None
-    try:
-        from notion_client import Client
-        return Client(auth=k)
-    except Exception:
-        return None
+    return {
+        "Authorization": f"Bearer {k}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
 
 def ensure_notion_db_schema():
     """데이터베이스(Database)에 필요한 속성(Property)이 없으면 자동 추가 (raw API 사용)"""
@@ -421,13 +421,9 @@ def ensure_notion_db_schema():
     if not k or not db_id:
         return
     try:
-        headers = {
-            "Authorization": f"Bearer {k}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json",
-        }
+        H = _notion_headers()
         # 현재 속성 조회
-        r = requests.get(f"https://api.notion.com/v1/databases/{db_id}", headers=headers, timeout=10)
+        r = requests.get(f"https://api.notion.com/v1/databases/{db_id}", headers=H, timeout=10)
         existing = set(r.json().get("properties", {}).keys())
 
         to_add = {}
@@ -447,18 +443,18 @@ def ensure_notion_db_schema():
         if to_add:
             requests.patch(
                 f"https://api.notion.com/v1/databases/{db_id}",
-                headers=headers, json={"properties": to_add}, timeout=10
+                headers=H, json={"properties": to_add}, timeout=10
             )
     except Exception:
         pass
 
 def save_scrap_to_notion(scrap):
     """스크랩 1개를 노션 데이터베이스(Database)에 저장"""
-    notion = _notion_client()
-    _, db_id = _get_notion_creds()
-    if not notion or not db_id:
+    k, db_id = _get_notion_creds()
+    if not k or not db_id:
         return False
     try:
+        H = _notion_headers()
         s_type  = scrap.get("type", "📝 메모")
         content = scrap.get("content", "")
         created = scrap.get("created_at", datetime.now().strftime("%Y-%m-%d"))
@@ -497,18 +493,18 @@ def save_scrap_to_notion(scrap):
                               "callout": {"rich_text": [{"text": {"content": f"🤖 AI 요약\n{ai_sum[:1900]}"}}],
                                           "icon": {"emoji": "🤖"}}})
 
-        notion.pages.create(parent={"database_id": db_id},
-                            properties=properties,
-                            children=children)
-        return True
+        payload = {"parent": {"database_id": db_id}, "properties": properties}
+        if children:
+            payload["children"] = children
+        r = requests.post("https://api.notion.com/v1/pages", headers=H, json=payload, timeout=15)
+        return r.status_code == 200
     except Exception:
         return False
 
 def load_scraps_from_notion():
     """노션 데이터베이스(Database)에서 스크랩 전체 불러오기"""
-    notion = _notion_client()
-    _, db_id = _get_notion_creds()
-    if not notion or not db_id:
+    k, db_id = _get_notion_creds()
+    if not k or not db_id:
         return None  # None = 노션 미설정 (로컬 사용)
 
     def _title(props, key):
@@ -529,18 +525,21 @@ def load_scraps_from_notion():
         return props.get(key, {}).get("url") or ""
 
     try:
+        H = _notion_headers()
         all_pages, cursor = [], None
         while True:
-            kwargs = dict(database_id=db_id,
-                          sorts=[{"property": "날짜", "direction": "descending"}],
-                          page_size=100)
+            body = {"sorts": [{"property": "날짜", "direction": "descending"}], "page_size": 100}
             if cursor:
-                kwargs["start_cursor"] = cursor
-            resp = notion.databases.query(**kwargs)
-            all_pages.extend(resp.get("results", []))
-            if not resp.get("has_more"):
+                body["start_cursor"] = cursor
+            resp = requests.post(
+                f"https://api.notion.com/v1/databases/{db_id}/query",
+                headers=H, json=body, timeout=15
+            )
+            data = resp.json()
+            all_pages.extend(data.get("results", []))
+            if not data.get("has_more"):
                 break
-            cursor = resp.get("next_cursor")
+            cursor = data.get("next_cursor")
 
         scraps = []
         for page in all_pages:
@@ -565,23 +564,30 @@ def load_scraps_from_notion():
 
 def delete_scrap_from_notion(notion_page_id):
     """노션 페이지(Page) 보관(Archive) 처리 = 삭제"""
-    notion = _notion_client()
-    if not notion or not notion_page_id:
+    k, _ = _get_notion_creds()
+    if not k or not notion_page_id:
         return
     try:
-        notion.pages.update(page_id=notion_page_id, archived=True)
+        H = _notion_headers()
+        requests.patch(
+            f"https://api.notion.com/v1/pages/{notion_page_id}",
+            headers=H, json={"archived": True}, timeout=10
+        )
     except Exception:
         pass
 
 def update_memo_in_notion(notion_page_id, memo):
     """노션 페이지(Page)의 메모(Memo) 속성(Property) 업데이트"""
-    notion = _notion_client()
-    if not notion or not notion_page_id:
+    k, _ = _get_notion_creds()
+    if not k or not notion_page_id:
         return
     try:
-        notion.pages.update(
-            page_id=notion_page_id,
-            properties={"메모": {"rich_text": [{"text": {"content": memo[:2000]}}]}}
+        H = _notion_headers()
+        requests.patch(
+            f"https://api.notion.com/v1/pages/{notion_page_id}",
+            headers=H,
+            json={"properties": {"메모": {"rich_text": [{"text": {"content": memo[:2000]}}]}}},
+            timeout=10
         )
     except Exception:
         pass
@@ -3002,7 +3008,7 @@ elif page == "📎 스크랩북":
     # 노션(Notion) 데이터베이스(Database) 임베드(Embed) 뷰
     # ─────────────────────────────────────────────────────────
     if _use_notion:
-        NOTION_EMBED_URL = "https://sinisori.notion.site/35f98556da9880eaa3c5eb3d460b22de?v=35f98556da98808a9552000c7b9c8759"
+        NOTION_EMBED_URL = "https://sinisori.notion.site/35f98556da9880eaa3c5eb3d460b22de"
         st.markdown("#### 📋 노션(Notion) 데이터베이스(Database) 뷰")
         st.components.v1.iframe(NOTION_EMBED_URL, height=600, scrolling=True)
 
