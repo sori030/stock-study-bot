@@ -416,14 +416,20 @@ def _notion_client():
         return None
 
 def ensure_notion_db_schema():
-    """데이터베이스(Database)에 필요한 속성(Property)이 없으면 자동 추가"""
-    notion = _notion_client()
-    _, db_id = _get_notion_creds()
-    if not notion or not db_id:
+    """데이터베이스(Database)에 필요한 속성(Property)이 없으면 자동 추가 (raw API 사용)"""
+    k, db_id = _get_notion_creds()
+    if not k or not db_id:
         return
     try:
-        db = notion.databases.retrieve(database_id=db_id)
-        existing = set(db["properties"].keys())
+        headers = {
+            "Authorization": f"Bearer {k}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json",
+        }
+        # 현재 속성 조회
+        r = requests.get(f"https://api.notion.com/v1/databases/{db_id}", headers=headers, timeout=10)
+        existing = set(r.json().get("properties", {}).keys())
+
         to_add = {}
         if "종류" not in existing:
             to_add["종류"] = {"select": {"options": [
@@ -431,20 +437,18 @@ def ensure_notion_db_schema():
                 {"name": "🔗 링크",   "color": "green"},
                 {"name": "📝 메모",   "color": "yellow"},
             ]}}
-        if "태그" not in existing:
-            to_add["태그"] = {"multi_select": {}}
-        if "날짜" not in existing:
-            to_add["날짜"] = {"date": {}}
-        if "URL" not in existing:
-            to_add["URL"] = {"url": {}}
-        if "AI요약" not in existing:
-            to_add["AI요약"] = {"rich_text": {}}
-        if "메모" not in existing:
-            to_add["메모"] = {"rich_text": {}}
-        if "ScrapID" not in existing:
-            to_add["ScrapID"] = {"rich_text": {}}
+        if "태그"    not in existing: to_add["태그"]    = {"multi_select": {}}
+        if "날짜"    not in existing: to_add["날짜"]    = {"date":         {}}
+        if "URL"     not in existing: to_add["URL"]     = {"url":          {}}
+        if "AI요약"  not in existing: to_add["AI요약"]  = {"rich_text":    {}}
+        if "메모"    not in existing: to_add["메모"]    = {"rich_text":    {}}
+        if "ScrapID" not in existing: to_add["ScrapID"] = {"rich_text":    {}}
+
         if to_add:
-            notion.databases.update(database_id=db_id, properties=to_add)
+            requests.patch(
+                f"https://api.notion.com/v1/databases/{db_id}",
+                headers=headers, json={"properties": to_add}, timeout=10
+            )
     except Exception:
         pass
 
@@ -461,7 +465,7 @@ def save_scrap_to_notion(scrap):
         date_str = created[:10]  # "2026-05-13 04:20" → "2026-05-13"
 
         properties = {
-            "제목":    {"title":        [{"text": {"content": scrap.get("title", "")[:2000]}}]},
+            "이름":    {"title":        [{"text": {"content": scrap.get("title", "")[:2000]}}]},
             "종류":    {"select":       {"name": s_type}},
             "태그":    {"multi_select": [{"name": t[:100]} for t in scrap.get("tags", [])]},
             "날짜":    {"date":         {"start": date_str}},
@@ -545,7 +549,7 @@ def load_scraps_from_notion():
                 "id":             _rt(p, "ScrapID") or page["id"],
                 "notion_page_id": page["id"],
                 "type":           _sel(p, "종류") or "📝 메모",
-                "title":          _title(p, "제목"),
+                "title":          _title(p, "이름"),
                 "tags":           _ms(p, "태그"),
                 "ai_summary":     _rt(p, "AI요약"),
                 "memo":           _rt(p, "메모"),
