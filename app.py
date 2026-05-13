@@ -2603,22 +2603,56 @@ elif page == "🎯 나만의 전략":
 elif page == "📎 스크랩북":
     import base64
 
-    st.markdown("""
-    <div class="page-header">
-      <div class="icon">📎</div>
-      <h1>스크랩북</h1>
-      <p>영상·기사·이미지 캡쳐를 모아두고 AI 요약까지 한번에!</p>
-    </div>
-    """, unsafe_allow_html=True)
-
     # ── 세션 캐싱 ──────────────────────────────────────────────
     if "scraps" not in st.session_state:
         st.session_state.scraps = load_scraps(session_id)
 
+    all_scraps = st.session_state.scraps
+
+    # ─────────────────────────────────────────────────────────
+    # 헤더 + 내보내기/불러오기 (같은 행)
+    # ─────────────────────────────────────────────────────────
+    hdr_left, hdr_right = st.columns([3, 1])
+    with hdr_left:
+        st.markdown("""
+        <div class="page-header">
+          <div class="icon">📎</div>
+          <h1>스크랩북</h1>
+          <p>영상·기사·이미지 캡쳐를 모아두고 AI 요약까지 한번에!</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with hdr_right:
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+        if all_scraps:
+            export_data = json.dumps(all_scraps, ensure_ascii=False, indent=2)
+            st.download_button(
+                label="⬇️ 백업 저장",
+                data=export_data,
+                file_name=f"scraps_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="scrap_export_btn"
+            )
+        import_file = st.file_uploader(
+            "⬆️ 백업 불러오기", type=["json"], key="scrap_import",
+            help="이전에 저장한 JSON 백업 파일을 업로드하면 스크랩을 복원할 수 있어요"
+        )
+        if import_file:
+            try:
+                imported = json.load(import_file)
+                existing_ids = {s["id"] for s in st.session_state.scraps}
+                added = [s for s in imported if s.get("id") not in existing_ids]
+                st.session_state.scraps = added + st.session_state.scraps
+                save_scraps(session_id, st.session_state.scraps)
+                st.success(f"✅ {len(added)}개 복원 완료!")
+                st.rerun()
+            except Exception:
+                st.error("파일 형식이 맞지 않아요.")
+
     # ─────────────────────────────────────────────────────────
     # 새 스크랩 추가 폼
     # ─────────────────────────────────────────────────────────
-    with st.expander("➕ 새 스크랩 추가", expanded=len(st.session_state.scraps) == 0):
+    with st.expander("➕ 새 스크랩 추가", expanded=len(all_scraps) == 0):
         scrap_type = st.radio(
             "스크랩 종류",
             ["📸 이미지", "🔗 링크", "📝 메모"],
@@ -2629,7 +2663,6 @@ elif page == "📎 스크랩북":
         scrap_title = st.text_input("제목 (선택)", placeholder="이 스크랩에 제목을 붙여보세요", key="scrap_title_input")
         scrap_tags  = st.text_input("태그 (쉼표로 구분)", placeholder="예: ETF, 금리, 미국주식", key="scrap_tags_input")
 
-        # ── 타입별 입력 ──
         scrap_content = ""
         scrap_image_b64 = ""
         scrap_thumb = ""
@@ -2658,23 +2691,20 @@ elif page == "📎 스크랩북":
                 if url_meta.get("description"):
                     st.caption(url_meta["description"])
 
-        else:  # 📝 메모
+        else:
             scrap_content = st.text_area("메모 내용", placeholder="공부하면서 느낀 점, 중요한 내용을 자유롭게 기록하세요", height=120, key="scrap_memo_input")
 
-        # ── AI 요약 ──
         want_ai = st.checkbox("🤖 AI 요약 생성 (링크·메모에 추천)", value=False, key="scrap_want_ai")
 
-        col_save, col_cancel = st.columns([1, 4])
+        col_save, _ = st.columns([1, 4])
         with col_save:
             save_btn = st.button("💾 저장", type="primary", use_container_width=True, key="scrap_save_btn")
 
         if save_btn:
-            # 유효성 검사
             content_ok = bool(scrap_image_b64 or scrap_content.strip())
             if not content_ok:
                 st.warning("내용을 입력하거나 이미지를 업로드해주세요.")
             else:
-                # 제목 자동 생성
                 auto_title = scrap_title.strip()
                 if not auto_title:
                     if scrap_type == "📸 이미지":
@@ -2684,7 +2714,6 @@ elif page == "📎 스크랩북":
                     else:
                         auto_title = scrap_content[:40] + ("..." if len(scrap_content) > 40 else "")
 
-                # AI 요약
                 ai_summary = ""
                 if want_ai:
                     with st.spinner("AI가 요약 중..."):
@@ -2694,10 +2723,7 @@ elif page == "📎 스크랩북":
                             summary_prompt = f"다음 내용을 주식·경제 공부 관점에서 2~3줄로 핵심만 요약해줘:\n{scrap_content}"
                         ai_summary = ai_analyze(summary_prompt)
 
-                # 태그 파싱
                 tags = [t.strip().lstrip("#") for t in scrap_tags.split(",") if t.strip()]
-
-                # 썸네일 (링크용)
                 if scrap_type == "🔗 링크":
                     scrap_thumb = url_meta.get("image", "")
 
@@ -2727,71 +2753,38 @@ elif page == "📎 스크랩북":
     all_scraps = st.session_state.scraps
     all_tags = sorted({t for s in all_scraps for t in s.get("tags", [])})
 
-    fc1, fc2, fc3 = st.columns([2, 2, 1])
+    fc1, fc2, fc3 = st.columns([3, 2, 1])
     with fc1:
-        search_q = st.text_input("🔍 검색", placeholder="제목·내용·태그 검색", label_visibility="collapsed", key="scrap_search")
+        search_q = st.text_input("검색", placeholder="🔍 제목·내용·태그 검색", label_visibility="collapsed", key="scrap_search")
     with fc2:
-        tag_filter = st.selectbox("🏷️ 태그 필터", ["전체"] + all_tags, key="scrap_tag_filter", label_visibility="collapsed")
+        tag_filter = st.selectbox("태그", ["🏷️ 태그 전체"] + all_tags, key="scrap_tag_filter", label_visibility="collapsed")
     with fc3:
-        type_filter = st.selectbox("종류", ["전체", "📸 이미지", "🔗 링크", "📝 메모"], key="scrap_type_filter", label_visibility="collapsed")
+        type_filter = st.selectbox("종류", ["전체", "📸", "🔗", "📝"], key="scrap_type_filter", label_visibility="collapsed")
 
-    # 필터 적용
     filtered = all_scraps
     if search_q:
         q = search_q.lower()
         filtered = [s for s in filtered if q in s.get("title","").lower() or q in s.get("content","").lower() or any(q in t.lower() for t in s.get("tags",[]))]
-    if tag_filter != "전체":
+    if tag_filter != "🏷️ 태그 전체":
         filtered = [s for s in filtered if tag_filter in s.get("tags", [])]
-    if type_filter != "전체":
-        filtered = [s for s in filtered if s.get("type") == type_filter]
+    if type_filter == "📸":
+        filtered = [s for s in filtered if "이미지" in s.get("type","")]
+    elif type_filter == "🔗":
+        filtered = [s for s in filtered if "링크" in s.get("type","")]
+    elif type_filter == "📝":
+        filtered = [s for s in filtered if "메모" in s.get("type","")]
 
-    # ─────────────────────────────────────────────────────────
-    # 내보내기 / 불러오기
-    # ─────────────────────────────────────────────────────────
-    exp_col1, exp_col2, exp_col3 = st.columns([2, 2, 4])
-    with exp_col1:
-        if all_scraps:
-            export_data = json.dumps(all_scraps, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="⬇️ JSON 내보내기",
-                data=export_data,
-                file_name=f"scraps_{datetime.now().strftime('%Y%m%d')}.json",
-                mime="application/json",
-                use_container_width=True,
-                key="scrap_export_btn"
-            )
-    with exp_col2:
-        import_file = st.file_uploader("⬆️ JSON 불러오기", type=["json"], key="scrap_import", label_visibility="collapsed")
-        if import_file:
-            try:
-                imported = json.load(import_file)
-                existing_ids = {s["id"] for s in st.session_state.scraps}
-                added = [s for s in imported if s.get("id") not in existing_ids]
-                st.session_state.scraps = added + st.session_state.scraps
-                save_scraps(session_id, st.session_state.scraps)
-                st.success(f"✅ {len(added)}개 스크랩을 불러왔어요!")
-                st.rerun()
-            except Exception:
-                st.error("JSON 파일 형식이 맞지 않아요.")
-
-    st.caption(f"총 {len(filtered)}개 스크랩" + (f" (전체 {len(all_scraps)}개 중)" if len(filtered) != len(all_scraps) else ""))
+    st.caption(f"총 {len(filtered)}개 스크랩" + (f" (전체 {len(all_scraps)}개 중 필터)" if len(filtered) != len(all_scraps) else ""))
 
     # ─────────────────────────────────────────────────────────
     # 스크랩 카드 그리드
     # ─────────────────────────────────────────────────────────
     if not filtered:
         if not all_scraps:
-            st.markdown("""
-            <div style="text-align:center; padding: 60px 20px; color: #94a3b8;">
-                <div style="font-size:3rem; margin-bottom:12px;">📎</div>
-                <p style="font-size:1.1rem; font-weight:600; color:#64748b;">아직 스크랩이 없어요</p>
-                <p style="font-size:0.88rem;">위에서 이미지·링크·메모를 추가해보세요!</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown('<div style="text-align:center;padding:60px 20px;color:#94a3b8"><div style="font-size:3rem;margin-bottom:12px">📎</div><p style="font-size:1.1rem;font-weight:600;color:#64748b">아직 스크랩이 없어요</p><p style="font-size:0.88rem">위에서 이미지·링크·메모를 추가해보세요!</p></div>', unsafe_allow_html=True)
         else:
             st.info("검색 결과가 없어요.")
     else:
-        # 3열 그리드
         cols_per_row = 3
         for row_start in range(0, len(filtered), cols_per_row):
             row_scraps = filtered[row_start:row_start + cols_per_row]
@@ -2804,43 +2797,41 @@ elif page == "📎 스크랩북":
                     type_icon  = "📸" if "이미지" in s_type else "🔗" if "링크" in s_type else "📝"
 
                     # 썸네일
-                    thumb_html = ""
                     if scrap.get("image_b64"):
-                        img_data = scrap["image_b64"]
-                        thumb_html = f'<img src="data:image/jpeg;base64,{img_data}" class="scrap-card-thumb" />'
+                        st.markdown(f'<img src="data:image/jpeg;base64,{scrap["image_b64"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" />', unsafe_allow_html=True)
                     elif scrap.get("thumb"):
-                        thumb_html = f'<img src="{scrap["thumb"]}" class="scrap-card-thumb" onerror="this.style.display=\'none\'" />'
+                        st.markdown(f'<img src="{scrap["thumb"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" onerror="this.style.display=\'none\'" />', unsafe_allow_html=True)
                     else:
-                        thumb_html = f'<div class="scrap-card-thumb-placeholder">{type_icon}</div>'
+                        st.markdown(f'<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;background:#f8fafc;border-radius:10px 10px 0 0">{type_icon}</div>', unsafe_allow_html=True)
 
-                    # 태그
-                    tags_html = "".join(f'<span class="scrap-tag">#{t}</span>' for t in scrap.get("tags", []))
+                    # 카드 본문 (타입 뱃지 + 제목 + 날짜)
+                    title_safe = scrap.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+                    date_safe  = scrap.get("created_at", "")
+                    st.markdown(
+                        f'<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:12px 14px 10px">'
+                        f'<span class="scrap-card-type {type_class}">{type_icon} {type_label}</span>'
+                        f'<div style="font-size:0.95rem;font-weight:700;color:#1e293b;margin:6px 0 4px;line-height:1.4">{title_safe}</div>'
+                        f'<div style="font-size:0.75rem;color:#94a3b8">🕐 {date_safe}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
                     # AI 요약
                     summary = scrap.get("ai_summary", "")
-                    summary_html = f'<div class="scrap-card-summary">{summary[:150]}{"..." if len(summary)>150 else ""}</div>' if summary else ""
+                    if summary:
+                        st.caption(f"🤖 {summary[:120]}{'...' if len(summary)>120 else ''}")
 
-                    # 링크 버튼
-                    link_html = ""
+                    # 태그
+                    tags_list = scrap.get("tags", [])
+                    if tags_list:
+                        tags_html = " ".join(f'<span class="scrap-tag">#{t}</span>' for t in tags_list)
+                        st.markdown(f'<div style="margin:4px 0">{tags_html}</div>', unsafe_allow_html=True)
+
+                    # 링크 열기
                     if "링크" in s_type and scrap.get("content"):
-                        link_html = f'<a href="{scrap["content"]}" target="_blank" style="font-size:0.78rem; color:#3b82f6; text-decoration:none;">🔗 열기</a>'
+                        st.markdown(f'<a href="{scrap["content"]}" target="_blank" style="font-size:0.8rem;color:#3b82f6;text-decoration:none">🔗 원본 열기</a>', unsafe_allow_html=True)
 
-                    card_html = f"""
-                    <div class="scrap-card">
-                        {thumb_html}
-                        <div class="scrap-card-body">
-                            <span class="scrap-card-type {type_class}">{type_icon} {type_label}</span>
-                            <div class="scrap-card-title">{scrap.get("title","")}</div>
-                            <div class="scrap-card-meta">🕐 {scrap.get("created_at","")}</div>
-                            {summary_html}
-                            <div>{tags_html}</div>
-                        </div>
-                        <div class="scrap-card-footer">{link_html}</div>
-                    </div>
-                    """
-                    st.markdown(card_html, unsafe_allow_html=True)
-
-                    # 메모 + 삭제 (카드 아래 네이티브 버튼)
+                    # 메모 + 삭제
                     with st.expander("✏️ 메모 / 🗑️ 삭제"):
                         memo_key = f"memo_{scrap['id']}"
                         memo_val = st.text_area("메모", value=scrap.get("memo", ""), key=memo_key, height=80, label_visibility="collapsed", placeholder="메모를 추가해보세요...")
