@@ -2999,83 +2999,83 @@ elif page == "📎 스크랩북":
     st.caption(f"총 {len(filtered)}개 스크랩" + (f" (전체 {len(all_scraps)}개 중 필터)" if len(filtered) != len(all_scraps) else ""))
 
     # ─────────────────────────────────────────────────────────
-    # 스크랩 카드 그리드
+    # 노션(Notion) 데이터베이스(Database) 임베드(Embed) 뷰
     # ─────────────────────────────────────────────────────────
-    if not filtered:
-        if not all_scraps:
-            st.markdown('<div style="text-align:center;padding:60px 20px;color:#94a3b8"><div style="font-size:3rem;margin-bottom:12px">📎</div><p style="font-size:1.1rem;font-weight:600;color:#64748b">아직 스크랩이 없어요</p><p style="font-size:0.88rem">위에서 이미지·링크·메모를 추가해보세요!</p></div>', unsafe_allow_html=True)
+    if _use_notion:
+        NOTION_EMBED_URL = "https://sinisori.notion.site/35f98556da9880eaa3c5eb3d460b22de?v=35f98556da98808a9552000c7b9c8759"
+        st.markdown("#### 📋 노션(Notion) 데이터베이스(Database) 뷰")
+        st.components.v1.iframe(NOTION_EMBED_URL, height=600, scrolling=True)
+
+    # ─────────────────────────────────────────────────────────
+    # 스크랩 카드 그리드 (노션 미연동 시에만 표시)
+    # ─────────────────────────────────────────────────────────
+    if not _use_notion:
+        if not filtered:
+            if not all_scraps:
+                st.markdown('<div style="text-align:center;padding:60px 20px;color:#94a3b8"><div style="font-size:3rem;margin-bottom:12px">📎</div><p style="font-size:1.1rem;font-weight:600;color:#64748b">아직 스크랩이 없어요</p><p style="font-size:0.88rem">위에서 이미지·링크·메모를 추가해보세요!</p></div>', unsafe_allow_html=True)
+            else:
+                st.info("검색 결과가 없어요.")
         else:
-            st.info("검색 결과가 없어요.")
-    else:
-        cols_per_row = 3
-        for row_start in range(0, len(filtered), cols_per_row):
-            row_scraps = filtered[row_start:row_start + cols_per_row]
-            cols = st.columns(cols_per_row)
-            for col, scrap in zip(cols, row_scraps):
-                with col:
-                    s_type = scrap.get("type", "📝 메모")
-                    type_class = "type-image" if "이미지" in s_type else "type-url" if "링크" in s_type else "type-memo"
-                    type_label = "이미지" if "이미지" in s_type else "링크" if "링크" in s_type else "메모"
-                    type_icon  = "📸" if "이미지" in s_type else "🔗" if "링크" in s_type else "📝"
+            cols_per_row = 3
+            for row_start in range(0, len(filtered), cols_per_row):
+                row_scraps = filtered[row_start:row_start + cols_per_row]
+                cols = st.columns(cols_per_row)
+                for col, scrap in zip(cols, row_scraps):
+                    with col:
+                        s_type = scrap.get("type", "📝 메모")
+                        type_class = "type-image" if "이미지" in s_type else "type-url" if "링크" in s_type else "type-memo"
+                        type_label = "이미지" if "이미지" in s_type else "링크" if "링크" in s_type else "메모"
+                        type_icon  = "📸" if "이미지" in s_type else "🔗" if "링크" in s_type else "📝"
 
-                    # 썸네일
-                    if scrap.get("image_b64"):
-                        st.markdown(f'<img src="data:image/jpeg;base64,{scrap["image_b64"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" />', unsafe_allow_html=True)
-                    elif scrap.get("thumb"):
-                        st.markdown(f'<img src="{scrap["thumb"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" onerror="this.style.display=\'none\'" />', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;background:#f8fafc;border-radius:10px 10px 0 0">{type_icon}</div>', unsafe_allow_html=True)
+                        if scrap.get("image_b64"):
+                            st.markdown(f'<img src="data:image/jpeg;base64,{scrap["image_b64"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" />', unsafe_allow_html=True)
+                        elif scrap.get("thumb"):
+                            st.markdown(f'<img src="{scrap["thumb"]}" style="width:100%;height:160px;object-fit:cover;border-radius:10px 10px 0 0" onerror="this.style.display=\'none\'" />', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<div style="width:100%;height:90px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;background:#f8fafc;border-radius:10px 10px 0 0">{type_icon}</div>', unsafe_allow_html=True)
 
-                    # 카드 본문 (타입 뱃지 + 제목 + 날짜)
-                    title_safe = scrap.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-                    date_safe  = scrap.get("created_at", "")
-                    st.markdown(
-                        f'<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:12px 14px 10px">'
-                        f'<span class="scrap-card-type {type_class}">{type_icon} {type_label}</span>'
-                        f'<div style="font-size:0.95rem;font-weight:700;color:#1e293b;margin:6px 0 4px;line-height:1.4">{title_safe}</div>'
-                        f'<div style="font-size:0.75rem;color:#94a3b8">🕐 {date_safe}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
+                        title_safe = scrap.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+                        date_safe  = scrap.get("created_at", "")
+                        st.markdown(
+                            f'<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:12px 14px 10px">'
+                            f'<span class="scrap-card-type {type_class}">{type_icon} {type_label}</span>'
+                            f'<div style="font-size:0.95rem;font-weight:700;color:#1e293b;margin:6px 0 4px;line-height:1.4">{title_safe}</div>'
+                            f'<div style="font-size:0.75rem;color:#94a3b8">🕐 {date_safe}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True
+                        )
+                        summary = scrap.get("ai_summary", "")
+                        if summary:
+                            st.caption(f"🤖 {summary[:120]}{'...' if len(summary)>120 else ''}")
+                        tags_list = scrap.get("tags", [])
+                        if tags_list:
+                            tags_html = " ".join(f'<span class="scrap-tag">#{t}</span>' for t in tags_list)
+                            st.markdown(f'<div style="margin:4px 0">{tags_html}</div>', unsafe_allow_html=True)
+                        if "링크" in s_type and scrap.get("content"):
+                            st.markdown(f'<a href="{scrap["content"]}" target="_blank" style="font-size:0.8rem;color:#3b82f6;text-decoration:none">🔗 원본 열기</a>', unsafe_allow_html=True)
 
-                    # AI 요약
-                    summary = scrap.get("ai_summary", "")
-                    if summary:
-                        st.caption(f"🤖 {summary[:120]}{'...' if len(summary)>120 else ''}")
-
-                    # 태그
-                    tags_list = scrap.get("tags", [])
-                    if tags_list:
-                        tags_html = " ".join(f'<span class="scrap-tag">#{t}</span>' for t in tags_list)
-                        st.markdown(f'<div style="margin:4px 0">{tags_html}</div>', unsafe_allow_html=True)
-
-                    # 링크 열기
-                    if "링크" in s_type and scrap.get("content"):
-                        st.markdown(f'<a href="{scrap["content"]}" target="_blank" style="font-size:0.8rem;color:#3b82f6;text-decoration:none">🔗 원본 열기</a>', unsafe_allow_html=True)
-
-                    # 메모 + 삭제
-                    with st.expander("✏️ 메모 / 🗑️ 삭제"):
-                        memo_key = f"memo_{scrap['id']}"
-                        memo_val = st.text_area("메모", value=scrap.get("memo", ""), key=memo_key, height=80, label_visibility="collapsed", placeholder="메모를 추가해보세요...")
-                        mc1, mc2 = st.columns(2)
-                        with mc1:
-                            if st.button("💾 메모 저장", key=f"save_memo_{scrap['id']}", use_container_width=True):
-                                if _use_notion:
-                                    update_memo_in_notion(scrap.get("notion_page_id"), memo_val)
-                                else:
-                                    for i, s in enumerate(st.session_state.scraps):
-                                        if s["id"] == scrap["id"]:
-                                            st.session_state.scraps[i]["memo"] = memo_val
-                                            break
-                                    save_scraps(session_id, st.session_state.scraps)
-                                st.success("저장!")
-                        with mc2:
-                            if st.button("🗑️ 삭제", key=f"del_{scrap['id']}", use_container_width=True, type="secondary"):
-                                if _use_notion:
-                                    delete_scrap_from_notion(scrap.get("notion_page_id"))
-                                    refreshed = load_scraps_from_notion()
-                                    st.session_state.scraps = refreshed if refreshed is not None else []
-                                else:
-                                    delete_scrap(session_id, scrap["id"])
-                                    st.session_state.scraps = load_scraps(session_id)
-                                st.rerun()
+                        with st.expander("✏️ 메모 / 🗑️ 삭제"):
+                            memo_key = f"memo_{scrap['id']}"
+                            memo_val = st.text_area("메모", value=scrap.get("memo", ""), key=memo_key, height=80, label_visibility="collapsed", placeholder="메모를 추가해보세요...")
+                            mc1, mc2 = st.columns(2)
+                            with mc1:
+                                if st.button("💾 메모 저장", key=f"save_memo_{scrap['id']}", use_container_width=True):
+                                    if _use_notion:
+                                        update_memo_in_notion(scrap.get("notion_page_id"), memo_val)
+                                    else:
+                                        for i, s in enumerate(st.session_state.scraps):
+                                            if s["id"] == scrap["id"]:
+                                                st.session_state.scraps[i]["memo"] = memo_val
+                                                break
+                                        save_scraps(session_id, st.session_state.scraps)
+                                    st.success("저장!")
+                            with mc2:
+                                if st.button("🗑️ 삭제", key=f"del_{scrap['id']}", use_container_width=True, type="secondary"):
+                                    if _use_notion:
+                                        delete_scrap_from_notion(scrap.get("notion_page_id"))
+                                        refreshed = load_scraps_from_notion()
+                                        st.session_state.scraps = refreshed if refreshed is not None else []
+                                    else:
+                                        delete_scrap(session_id, scrap["id"])
+                                        st.session_state.scraps = load_scraps(session_id)
+                                    st.rerun()
