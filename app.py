@@ -3120,25 +3120,42 @@ elif page == "🎮 모의 투자":
     # ── 시뮬레이션 데이터 로드 ──────────────────────────────────
     if "sim" not in st.session_state:
         st.session_state.sim = load_simulation(session_id)
-    sim = st.session_state.sim
 
     # ── 헤더 ────────────────────────────────────────────────────
     st.markdown("## 🎮 모의 투자 시뮬레이터")
-    st.caption("실제 차트를 보면서 매수·매도를 연습해보세요. 가상 자금 **1천만원**으로 시작합니다.")
+    st.caption("실제 차트를 보면서 매수·매도를 연습해보세요.")
 
-    col_head1, col_head2 = st.columns([5, 1])
-    with col_head2:
-        if st.button("🔄 초기화", type="secondary", use_container_width=True):
-            st.session_state.sim = {
-                "cash": SIM_INIT_CASH,
-                "holdings": {},
-                "trades": [],
-                "init_cash": SIM_INIT_CASH,
-            }
-            save_simulation(session_id, st.session_state.sim)
-            sim = st.session_state.sim
-            st.success("초기화 완료!")
-            st.rerun()
+    # ── 초기화 패널 ──────────────────────────────────────────────
+    with st.expander("⚙️ 시드머니 설정 & 초기화", expanded=False):
+        ec1, ec2 = st.columns([2, 1])
+        with ec1:
+            seed_input = st.number_input(
+                "시드머니 (원)",
+                min_value=100_000,
+                max_value=1_000_000_000,
+                value=int(st.session_state.sim.get("init_cash", SIM_INIT_CASH)),
+                step=1_000_000,
+                format="%d",
+                key="sim_seed_input",
+                help="초기화 시 이 금액으로 새로 시작합니다.",
+            )
+            st.caption(f"💡 설정 금액: **{seed_input:,}원**")
+        with ec2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔄 초기화 실행", type="primary", use_container_width=True, key="sim_reset_btn"):
+                new_sim = {
+                    "cash": seed_input,
+                    "holdings": {},
+                    "trades": [],
+                    "init_cash": seed_input,
+                }
+                st.session_state.sim = new_sim
+                save_simulation(session_id, new_sim)
+                st.success(f"✅ {seed_input:,}원으로 초기화 완료!")
+                st.rerun()
+
+    # sim은 초기화 처리 후에 할당 (항상 최신 상태 반영)
+    sim = st.session_state.sim
 
     st.markdown("---")
 
