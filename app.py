@@ -248,6 +248,32 @@ p, h1, h2, h3, h4, h5, h6, label, li, td, th, caption, textarea, select {
 HISTORY_DIR = os.path.join(os.path.dirname(__file__), "histories")
 os.makedirs(HISTORY_DIR, exist_ok=True)
 
+# ── 모의 투자 시뮬레이션 저장/불러오기 ──────────────────────────
+SIM_INIT_CASH = 10_000_000  # 초기 시드머니 1천만원
+
+def get_sim_file(session_id):
+    return os.path.join(HISTORY_DIR, f"simulation_{session_id}.json")
+
+def load_simulation(session_id):
+    path = get_sim_file(session_id)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "cash": SIM_INIT_CASH,
+        "holdings": {},   # {ticker: {shares, avg_price, name}}
+        "trades": [],     # [{date, ticker, name, type, shares, price, total_krw, ...}]
+        "init_cash": SIM_INIT_CASH,
+    }
+
+def save_simulation(session_id, sim):
+    path = get_sim_file(session_id)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(sim, f, ensure_ascii=False, indent=2)
+
 def get_session_id():
     """브라우저별 고유 ID를 URL 파라미터로 관리"""
     params = st.query_params
@@ -611,7 +637,7 @@ with st.sidebar:
         st.markdown("[무료 발급받기](https://aistudio.google.com/app/apikey)")
         st.markdown("---")
 
-    menu_items = ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략", "📎 스크랩북"]
+    menu_items = ["📚 공부방", "📰 경제 뉴스", "📊 주식 정보", "⭐ 관심 종목", "📓 투자 일지", "🎯 나만의 전략", "📎 스크랩북", "🎮 모의 투자"]
     if "page" not in st.session_state:
         st.session_state.page = "📚 공부방"
 
@@ -3085,3 +3111,386 @@ elif page == "📎 스크랩북":
                                         delete_scrap(session_id, scrap["id"])
                                         st.session_state.scraps = load_scraps(session_id)
                                     st.rerun()
+
+# ══════════════════════════════════════════════════════════════
+# 🎮 모의 투자 페이지
+# ══════════════════════════════════════════════════════════════
+elif page == "🎮 모의 투자":
+
+    # ── 시뮬레이션 데이터 로드 ──────────────────────────────────
+    if "sim" not in st.session_state:
+        st.session_state.sim = load_simulation(session_id)
+    sim = st.session_state.sim
+
+    # ── 헤더 ────────────────────────────────────────────────────
+    st.markdown("## 🎮 모의 투자 시뮬레이터")
+    st.caption("실제 차트를 보면서 매수·매도를 연습해보세요. 가상 자금 **1천만원**으로 시작합니다.")
+
+    col_head1, col_head2 = st.columns([5, 1])
+    with col_head2:
+        if st.button("🔄 초기화", type="secondary", use_container_width=True):
+            st.session_state.sim = {
+                "cash": SIM_INIT_CASH,
+                "holdings": {},
+                "trades": [],
+                "init_cash": SIM_INIT_CASH,
+            }
+            save_simulation(session_id, st.session_state.sim)
+            sim = st.session_state.sim
+            st.success("초기화 완료!")
+            st.rerun()
+
+    st.markdown("---")
+
+    # ── 인기 종목 목록 ───────────────────────────────────────────
+    sim_popular_us = {
+        "Apple": "AAPL", "Tesla": "TSLA", "NVIDIA": "NVDA",
+        "Microsoft": "MSFT", "Amazon": "AMZN", "Google": "GOOGL",
+        "Meta": "META", "S&P500 ETF": "SPY", "나스닥100 ETF": "QQQ",
+    }
+    sim_popular_kr = {
+        "삼성전자": "005930.KS", "SK하이닉스": "000660.KS",
+        "NAVER": "035420.KS", "카카오": "035720.KS",
+        "현대차": "005380.KS", "LG에너지솔루션": "373220.KS",
+        "셀트리온": "068270.KS", "KODEX 200": "069500.KS",
+    }
+
+    tab_sim_chart, tab_sim_portfolio, tab_sim_history = st.tabs(
+        ["📈 차트 & 거래", "💼 포트폴리오", "📋 거래 내역"]
+    )
+
+    # ════════════════════════════════════════════════════════════
+    # 탭 1: 차트 + 매수/매도
+    # ════════════════════════════════════════════════════════════
+    with tab_sim_chart:
+
+        # 종목 선택 UI
+        sc1, sc2, sc3 = st.columns([1.5, 2, 2])
+        with sc1:
+            sim_market = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], key="sim_market")
+        with sc2:
+            pop_dict = sim_popular_us if "미국" in sim_market else sim_popular_kr
+            pop_list = ["직접 입력"] + list(pop_dict.keys())
+            sim_pop_sel = st.selectbox("인기 종목", pop_list, key="sim_pop")
+        with sc3:
+            if sim_pop_sel == "직접 입력":
+                sim_ticker_raw = st.text_input(
+                    "티커 직접 입력",
+                    placeholder="예: AAPL  /  005930.KS",
+                    key="sim_ticker_input",
+                )
+                sim_ticker = sim_ticker_raw.strip().upper()
+                sim_name   = sim_ticker
+            else:
+                sim_ticker = pop_dict[sim_pop_sel]
+                sim_name   = sim_pop_sel
+
+        sim_period = st.select_slider(
+            "차트 기간",
+            options=["5d", "1mo", "3mo", "6mo", "1y", "2y"],
+            value="3mo",
+            key="sim_period",
+        )
+
+        if not sim_ticker:
+            st.info("위에서 종목을 선택하거나 티커를 입력하세요.")
+        else:
+            with st.spinner(f"{sim_name} 데이터 불러오는 중..."):
+                try:
+                    tk  = yf.Ticker(sim_ticker)
+                    df  = tk.history(period=sim_period)
+                except Exception:
+                    df = pd.DataFrame()
+
+            if df.empty:
+                st.error("데이터를 불러올 수 없어요. 티커를 다시 확인해주세요.")
+            else:
+                is_us         = ".KS" not in sim_ticker
+                currency      = "원" if not is_us else "USD"
+                fx_rate       = 1350  # USD → KRW 대략 환율
+                current_price = float(df["Close"].iloc[-1])
+                prev_price    = float(df["Close"].iloc[-2]) if len(df) > 1 else current_price
+                price_change  = current_price - prev_price
+                price_pct     = price_change / prev_price * 100
+
+                def krw(price, shares=1):
+                    return price * shares * (fx_rate if is_us else 1)
+
+                price_fmt = f"${current_price:,.2f}" if is_us else f"{current_price:,.0f}원"
+
+                # 현재가 / 잔고 요약
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                holding = sim["holdings"].get(sim_ticker)
+                held_shares = holding["shares"] if holding else 0
+
+                with mc1:
+                    sign = "🔴" if price_change < 0 else "🟢"
+                    st.metric(f"{sign} 현재가", price_fmt, delta=f"{price_pct:+.2f}%")
+                with mc2:
+                    st.metric("💰 보유 현금", f"{sim['cash']:,.0f}원")
+                with mc3:
+                    st.metric("📦 보유 수량", f"{held_shares}주")
+                with mc4:
+                    if holding:
+                        avg = holding["avg_price"]
+                        unreal = (current_price - avg) * held_shares
+                        unreal_krw = krw(unreal)
+                        unreal_pct = (current_price - avg) / avg * 100 if avg else 0
+                        s2 = "🟢" if unreal >= 0 else "🔴"
+                        st.metric(f"{s2} 평가손익", f"{unreal_krw:+,.0f}원", delta=f"{unreal_pct:+.2f}%")
+                    else:
+                        st.metric("📊 평가손익", "-")
+
+                # 캔들스틱 + 거래량 차트
+                fig_c = go.Figure()
+                fig_c.add_trace(go.Candlestick(
+                    x=df.index,
+                    open=df["Open"], high=df["High"],
+                    low=df["Low"],   close=df["Close"],
+                    name=sim_name,
+                    increasing_line_color="#ef4444",
+                    decreasing_line_color="#3b82f6",
+                ))
+                fig_c.add_trace(go.Bar(
+                    x=df.index, y=df["Volume"],
+                    name="거래량",
+                    marker_color="rgba(99,102,241,0.3)",
+                    yaxis="y2",
+                ))
+                fig_c.update_layout(
+                    title=f"{sim_name} ({sim_ticker})",
+                    yaxis=dict(title="주가", side="right"),
+                    yaxis2=dict(
+                        title="거래량", overlaying="y", side="left",
+                        showgrid=False, range=[0, df["Volume"].max() * 5]
+                    ),
+                    xaxis_rangeslider_visible=False,
+                    height=450,
+                    paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                    font_color="white",
+                    legend=dict(orientation="h", y=1.02),
+                    margin=dict(t=60, b=20),
+                )
+                st.plotly_chart(fig_c, use_container_width=True)
+
+                # ── 매수 / 매도 패널 ──────────────────────────────────
+                st.markdown("### 🛒 주문 실행")
+                oc1, oc2 = st.columns(2)
+
+                # 매수 패널
+                with oc1:
+                    st.markdown("#### 🟢 매수")
+                    buy_shares = st.number_input(
+                        "매수 수량 (주)", min_value=1, value=1, step=1, key="sim_buy_shares"
+                    )
+                    buy_cost_krw = krw(current_price, buy_shares)
+                    buy_label = (f"${current_price * buy_shares:,.2f}  ≈  {buy_cost_krw:,.0f}원"
+                                 if is_us else f"{buy_cost_krw:,.0f}원")
+                    st.caption(f"주문 금액: **{buy_label}**")
+                    st.caption(f"보유 현금: **{sim['cash']:,.0f}원**")
+                    can_buy = sim["cash"] >= buy_cost_krw
+
+                    if st.button("✅ 매수 실행", type="primary",
+                                 use_container_width=True, key="sim_do_buy",
+                                 disabled=not can_buy):
+                        sim["cash"] -= buy_cost_krw
+                        if sim_ticker in sim["holdings"]:
+                            old = sim["holdings"][sim_ticker]
+                            tot = old["shares"] + buy_shares
+                            avg_new = (old["avg_price"] * old["shares"] + current_price * buy_shares) / tot
+                            sim["holdings"][sim_ticker] = {"shares": tot, "avg_price": avg_new, "name": sim_name}
+                        else:
+                            sim["holdings"][sim_ticker] = {"shares": buy_shares, "avg_price": current_price, "name": sim_name}
+                        sim["trades"].insert(0, {
+                            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "ticker": sim_ticker, "name": sim_name,
+                            "type": "매수", "shares": buy_shares,
+                            "price": current_price, "total_krw": buy_cost_krw,
+                            "currency": currency,
+                        })
+                        save_simulation(session_id, sim)
+                        st.session_state.sim = sim
+                        st.success(f"✅ {sim_name} {buy_shares}주 매수 완료! ({buy_cost_krw:,.0f}원 차감)")
+                        st.rerun()
+                    if not can_buy:
+                        st.warning("💸 현금이 부족합니다.")
+
+                # 매도 패널
+                with oc2:
+                    st.markdown("#### 🔴 매도")
+                    if held_shares > 0:
+                        sell_shares = st.number_input(
+                            "매도 수량 (주)", min_value=1, max_value=held_shares,
+                            value=1, step=1, key="sim_sell_shares"
+                        )
+                        sell_val_krw = krw(current_price, sell_shares)
+                        avg_p = holding["avg_price"] if holding else current_price
+                        pnl_per = current_price - avg_p
+                        pnl_krw = krw(pnl_per, sell_shares)
+                        sell_label = (f"${current_price * sell_shares:,.2f}  ≈  {sell_val_krw:,.0f}원"
+                                      if is_us else f"{sell_val_krw:,.0f}원")
+                        st.caption(f"예상 수익금: **{sell_label}**")
+                        pnl_emoji = "🟢 수익" if pnl_krw >= 0 else "🔴 손실"
+                        st.caption(f"{pnl_emoji}: **{pnl_krw:+,.0f}원**")
+
+                        if st.button("✅ 매도 실행", type="primary",
+                                     use_container_width=True, key="sim_do_sell"):
+                            sim["cash"] += sell_val_krw
+                            h = sim["holdings"][sim_ticker]
+                            h["shares"] -= sell_shares
+                            if h["shares"] <= 0:
+                                del sim["holdings"][sim_ticker]
+                            sim["trades"].insert(0, {
+                                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "ticker": sim_ticker, "name": sim_name,
+                                "type": "매도", "shares": sell_shares,
+                                "price": current_price, "total_krw": sell_val_krw,
+                                "pnl_krw": pnl_krw, "currency": currency,
+                            })
+                            save_simulation(session_id, sim)
+                            st.session_state.sim = sim
+                            msg = "📈 수익 실현!" if pnl_krw >= 0 else "📉 손절 완료"
+                            st.success(f"✅ {sim_name} {sell_shares}주 매도! {msg} ({pnl_krw:+,.0f}원)")
+                            st.rerun()
+                    else:
+                        st.info("이 종목을 보유하고 있지 않아요.")
+                        st.number_input("매도 수량 (주)", min_value=1, value=1,
+                                        key="sim_sell_shares_dis", disabled=True)
+                        st.button("✅ 매도 실행", type="primary",
+                                  use_container_width=True, key="sim_do_sell_dis", disabled=True)
+
+    # ════════════════════════════════════════════════════════════
+    # 탭 2: 포트폴리오
+    # ════════════════════════════════════════════════════════════
+    with tab_sim_portfolio:
+        st.markdown("### 💼 내 포트폴리오")
+
+        holdings_val  = 0.0
+        portfolio_rows = []
+
+        for ticker, h in sim["holdings"].items():
+            try:
+                cur_p = float(yf.Ticker(ticker).fast_info.last_price or h["avg_price"])
+            except Exception:
+                cur_p = h["avg_price"]
+            _is_us   = ".KS" not in ticker
+            _rate    = 1350 if _is_us else 1
+            cur_krw  = cur_p * h["shares"] * _rate
+            cost_krw = h["avg_price"] * h["shares"] * _rate
+            pnl_krw  = cur_krw - cost_krw
+            pnl_pct  = pnl_krw / cost_krw * 100 if cost_krw else 0
+            holdings_val += cur_krw
+            sym = "$" if _is_us else ""
+            portfolio_rows.append({
+                "종목":       h["name"],
+                "티커":       ticker,
+                "수량":       f"{h['shares']}주",
+                "평균단가":   f"{sym}{h['avg_price']:,.2f}" if _is_us else f"{h['avg_price']:,.0f}원",
+                "현재가":     f"{sym}{cur_p:,.2f}" if _is_us else f"{cur_p:,.0f}원",
+                "평가금액":   f"{cur_krw:,.0f}원",
+                "손익":       f"{pnl_krw:+,.0f}원",
+                "수익률":     f"{pnl_pct:+.2f}%",
+            })
+
+        total_assets = sim["cash"] + holdings_val
+        total_pnl    = total_assets - sim["init_cash"]
+        total_pct    = total_pnl / sim["init_cash"] * 100
+
+        # 요약 지표
+        p1, p2, p3, p4 = st.columns(4)
+        with p1: st.metric("💰 보유 현금",  f"{sim['cash']:,.0f}원")
+        with p2: st.metric("📈 주식 평가액", f"{holdings_val:,.0f}원")
+        with p3: st.metric("🏦 총 자산",    f"{total_assets:,.0f}원")
+        with p4:
+            s_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            st.metric(f"{s_emoji} 총 손익", f"{total_pnl:+,.0f}원", delta=f"{total_pct:+.2f}%")
+
+        # 도넛 차트 (자산 구성)
+        pie_labels, pie_values = ["현금"], [sim["cash"]]
+        for row in portfolio_rows:
+            pie_labels.append(row["종목"])
+            pie_values.append(float(row["평가금액"].replace(",", "").replace("원", "")))
+
+        if sum(pie_values) > 0:
+            pie_fig = go.Figure(go.Pie(
+                labels=pie_labels, values=pie_values, hole=0.45,
+                textinfo="label+percent",
+                marker_colors=["#6366f1","#22c55e","#f59e0b","#ef4444",
+                               "#3b82f6","#a855f7","#ec4899","#14b8a6"],
+            ))
+            pie_fig.update_layout(
+                title="자산 구성",
+                paper_bgcolor="#0e1117", font_color="white",
+                height=320, margin=dict(t=40, b=10),
+            )
+            st.plotly_chart(pie_fig, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("#### 📦 보유 종목 상세")
+        if portfolio_rows:
+            st.dataframe(pd.DataFrame(portfolio_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("보유 중인 종목이 없어요. 차트 탭에서 매수해보세요! 🛒")
+
+    # ════════════════════════════════════════════════════════════
+    # 탭 3: 거래 내역
+    # ════════════════════════════════════════════════════════════
+    with tab_sim_history:
+        st.markdown("### 📋 거래 내역")
+
+        if not sim["trades"]:
+            st.info("아직 거래 내역이 없어요. 차트 탭에서 첫 거래를 시작해보세요! 🚀")
+        else:
+            sell_trades  = [t for t in sim["trades"] if t["type"] == "매도"]
+            realized_pnl = sum(t.get("pnl_krw", 0) for t in sell_trades)
+            wins         = sum(1 for t in sell_trades if t.get("pnl_krw", 0) >= 0)
+            win_rate     = wins / len(sell_trades) * 100 if sell_trades else 0
+
+            h1, h2, h3, h4 = st.columns(4)
+            with h1: st.metric("📊 총 거래",   f"{len(sim['trades'])}회")
+            with h2: st.metric("💵 실현 손익", f"{realized_pnl:+,.0f}원")
+            with h3: st.metric("🏆 수익 매도", f"{wins}회")
+            with h4: st.metric("🎯 승률",      f"{win_rate:.1f}%" if sell_trades else "-")
+
+            st.markdown("---")
+
+            rows = []
+            for t in sim["trades"]:
+                pnl_str = f"{t['pnl_krw']:+,.0f}원" if "pnl_krw" in t else "-"
+                rows.append({
+                    "일시":         t["date"],
+                    "종목":         t["name"],
+                    "구분":         "🟢 매수" if t["type"] == "매수" else "🔴 매도",
+                    "수량":         f"{t['shares']}주",
+                    "체결가":       f"${t['price']:,.2f}" if t["currency"] != "원" else f"{t['price']:,.0f}원",
+                    "거래금액(원)": f"{t['total_krw']:,.0f}",
+                    "실현손익(원)": pnl_str,
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            # 누적 실현손익 차트
+            if sell_trades:
+                st.markdown("#### 📈 실현 손익 누적 추이")
+                cum, running = [], 0
+                for t in reversed(sell_trades):
+                    running += t.get("pnl_krw", 0)
+                    cum.append(running)
+                dates_s = [t["date"] for t in reversed(sell_trades)]
+
+                line_fig = go.Figure()
+                line_fig.add_trace(go.Scatter(
+                    x=dates_s, y=cum,
+                    mode="lines+markers",
+                    line=dict(color="#6366f1", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(99,102,241,0.15)",
+                    name="누적 실현손익",
+                ))
+                line_fig.add_hline(y=0, line_dash="dash", line_color="#64748b")
+                line_fig.update_layout(
+                    yaxis_title="누적 손익 (원)",
+                    paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+                    font_color="white", height=280,
+                    margin=dict(t=20, b=20),
+                )
+                st.plotly_chart(line_fig, use_container_width=True)
