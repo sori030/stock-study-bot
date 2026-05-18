@@ -274,6 +274,40 @@ def save_simulation(session_id, sim):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(sim, f, ensure_ascii=False, indent=2)
 
+def rebuild_sim(init_cash, trades_newest_first):
+    """거래 내역 수정·삭제 후 cash / holdings / pnl 전체 재계산"""
+    cash = init_cash
+    holdings = {}
+    new_trades = []
+    for t in reversed(trades_newest_first):   # 오래된 것부터 순서대로
+        name   = t["name"]
+        price  = t["price"]
+        shares = t["shares"]
+        total  = price * shares
+        if t["type"] == "매수":
+            cash -= total
+            if name in holdings:
+                old   = holdings[name]
+                tot_s = old["shares"] + shares
+                avg_n = (old["avg_price"] * old["shares"] + price * shares) / tot_s
+                holdings[name] = {"shares": tot_s, "avg_price": avg_n, "name": name}
+            else:
+                holdings[name] = {"shares": shares, "avg_price": price, "name": name}
+            pnl = 0
+        else:
+            cash += total
+            avg  = holdings[name]["avg_price"] if name in holdings else price
+            pnl  = (price - avg) * shares
+            if name in holdings:
+                holdings[name]["shares"] -= shares
+                if holdings[name]["shares"] <= 0:
+                    del holdings[name]
+        nt = dict(t)
+        nt["total_krw"] = total
+        nt["pnl_krw"]   = pnl if t["type"] == "매도" else 0
+        new_trades.append(nt)
+    return cash, holdings, list(reversed(new_trades))
+
 def get_session_id():
     """브라우저별 고유 ID를 URL 파라미터로 관리"""
     params = st.query_params
@@ -3170,21 +3204,63 @@ elif page == "🎮 모의 투자":
             t_memo   = st.text_input("메모 (선택)", placeholder="예: 실적 호조로 매수", key="t_memo")
 
         total_amt = t_shares * t_price
-        is_buy = "매수" in t_type
+        is_buy    = "매수" in t_type
 
         st.markdown(f"**거래 금액: {total_amt:,.0f}원**")
         if is_buy and sim["cash"] < total_amt:
             st.warning(f"⚠️ 현금 부족 — 잔여: {sim['cash']:,.0f}원 / 필요: {total_amt:,.0f}원")
 
-        # 매도 시 보유 수량 체크
         sell_warn = ""
         if not is_buy and t_name:
-            held = next((h for h in sim["holdings"].values() if h["name"] == t_name), None)
+            held = sim["holdings"].get(t_name.strip())
             if held and t_shares > held["shares"]:
                 sell_warn = f"⚠️ 보유 수량 초과 (현재 {held['shares']}주 보유)"
-
         if sell_warn:
             st.warning(sell_warn)
+
+        # ── 🎯 목표 수익률 계산기 (매도 선택 시만 노출) ────────────
+        if not is_buy and t_name.strip():
+            held = sim["holdings"].get(t_name.strip())
+            if held:
+                st.markdown("---")
+                st.markdown("#### 🎯 목표 수익률 계산기")
+                avg_p = held["avg_price"]
+                gc1, gc2 = st.columns(2)
+                with gc1:
+                    st.metric("📊 평균 매수단가", f"{avg_p:,.0f}원")
+                with gc2:
+                    target_rate = st.number_input(
+                        "목표 수익률 (%)", min_value=-50.0, max_value=1000.0,
+                        value=10.0, step=0.5, key="target_rate",
+                        help="목표 수익률을 입력하면 필요한 매도 단가를 계산합니다"
+                    )
+
+                target_price    = avg_p * (1 + target_rate / 100)
+                target_profit   = (target_price - avg_p) * t_shares
+                breakeven_price = avg_p   # 손익분기
+
+                rc1, rc2, rc3 = st.columns(3)
+                with rc1:
+                    st.metric("🎯 목표 매도 단가",  f"{target_price:,.0f}원",
+                              delta=f"{target_rate:+.1f}%")
+                with rc2:
+                    st.metric("💵 예상 수익금",
+                              f"{target_profit:+,.0f}원" if target_profit >= 0 else f"{target_profit:,.0f}원")
+                with rc3:
+                    st.metric("⚖️ 손익분기 단가", f"{breakeven_price:,.0f}원")
+
+                # 여러 수익률 한눈에 보기
+                st.caption("📋 수익률별 목표 단가")
+                rate_table = []
+                for r in [-10, -5, 0, 5, 10, 15, 20, 30, 50]:
+                    tp = avg_p * (1 + r / 100)
+                    rate_table.append({
+                        "수익률": f"{r:+d}%",
+                        "목표 단가 (원)": f"{tp:,.0f}",
+                        f"{t_shares}주 매도 시 손익": f"{(tp - avg_p) * t_shares:+,.0f}원",
+                    })
+                st.dataframe(pd.DataFrame(rate_table), use_container_width=True, hide_index=True)
+                st.markdown("---")
 
         can_add = bool(t_name) and not sell_warn and (not is_buy or sim["cash"] >= total_amt)
 
@@ -3194,25 +3270,24 @@ elif page == "🎮 모의 투자":
             if is_buy:
                 sim["cash"] -= total_amt
                 if trade_key in sim["holdings"]:
-                    old = sim["holdings"][trade_key]
+                    old   = sim["holdings"][trade_key]
                     tot_s = old["shares"] + t_shares
-                    avg_new = (old["avg_price"] * old["shares"] + t_price * t_shares) / tot_s
-                    sim["holdings"][trade_key] = {"shares": tot_s, "avg_price": avg_new, "name": t_name}
+                    avg_n = (old["avg_price"] * old["shares"] + t_price * t_shares) / tot_s
+                    sim["holdings"][trade_key] = {"shares": tot_s, "avg_price": avg_n, "name": t_name}
                 else:
                     sim["holdings"][trade_key] = {"shares": t_shares, "avg_price": t_price, "name": t_name}
                 pnl_krw = 0
             else:
                 sim["cash"] += total_amt
-                if trade_key in sim["holdings"]:
-                    h = sim["holdings"][trade_key]
-                    pnl_krw = (t_price - h["avg_price"]) * t_shares
-                    h["shares"] -= t_shares
-                    if h["shares"] <= 0:
+                held2   = sim["holdings"].get(trade_key)
+                pnl_krw = (t_price - held2["avg_price"]) * t_shares if held2 else 0
+                if held2:
+                    held2["shares"] -= t_shares
+                    if held2["shares"] <= 0:
                         del sim["holdings"][trade_key]
-                else:
-                    pnl_krw = 0
 
             sim["trades"].insert(0, {
+                "id":        str(uuid.uuid4()),
                 "date":      str(t_date),
                 "name":      t_name,
                 "type":      "매수" if is_buy else "매도",
@@ -3228,7 +3303,7 @@ elif page == "🎮 모의 투자":
                 st.success(f"✅ {t_name} {t_shares}주 매수 완료 ({total_amt:,.0f}원)")
             else:
                 sign = "📈 수익" if pnl_krw >= 0 else "📉 손실"
-                st.success(f"✅ {t_name} {t_shares}주 매도 완료 — {sign} {pnl_krw:+,.0f}원")
+                st.success(f"✅ {t_name} {t_shares}주 매도 — {sign} {pnl_krw:+,.0f}원")
             st.rerun()
 
         # ── 현재 보유 종목 간단 표 ─────────────────────────────
@@ -3238,10 +3313,9 @@ elif page == "🎮 모의 투자":
             h_rows = []
             for k, h in sim["holdings"].items():
                 h_rows.append({
-                    "종목": h["name"],
-                    "수량": f"{h['shares']}주",
+                    "종목": h["name"], "수량": f"{h['shares']}주",
                     "평균단가": f"{h['avg_price']:,.0f}원",
-                    "평가금액(평단×수량)": f"{h['avg_price'] * h['shares']:,.0f}원",
+                    "평가금액": f"{h['avg_price'] * h['shares']:,.0f}원",
                 })
             st.dataframe(pd.DataFrame(h_rows), use_container_width=True, hide_index=True)
 
@@ -3298,7 +3372,7 @@ elif page == "🎮 모의 투자":
             st.info("보유 중인 종목이 없어요. 거래 입력 탭에서 매수해보세요! 🛒")
 
     # ════════════════════════════════════════════════════════════
-    # 탭 3: 거래 내역
+    # 탭 3: 거래 내역 (삭제 / 수정 포함)
     # ════════════════════════════════════════════════════════════
     with tab_history:
         st.markdown("### 📋 전체 거래 내역")
@@ -3319,23 +3393,97 @@ elif page == "🎮 모의 투자":
 
             st.markdown("---")
 
+            # 거래 목록 표시 (번호 포함)
             t_rows = []
-            for t in sim["trades"]:
+            for i, t in enumerate(sim["trades"]):
                 pnl_str = f"{t['pnl_krw']:+,.0f}원" if t["type"] == "매도" else "-"
                 t_rows.append({
-                    "날짜":         t["date"],
-                    "종목":         t["name"],
-                    "구분":         "🟢 매수" if t["type"] == "매수" else "🔴 매도",
-                    "수량":         f"{t['shares']}주",
-                    "단가":         f"{t['price']:,.0f}원",
-                    "거래금액":     f"{t['total_krw']:,.0f}원",
-                    "실현손익":     pnl_str,
-                    "메모":         t.get("memo", ""),
+                    "#":        len(sim["trades"]) - i,
+                    "날짜":     t["date"],
+                    "종목":     t["name"],
+                    "구분":     "🟢 매수" if t["type"] == "매수" else "🔴 매도",
+                    "수량":     f"{t['shares']}주",
+                    "단가":     f"{t['price']:,.0f}원",
+                    "거래금액": f"{t['total_krw']:,.0f}원",
+                    "실현손익": pnl_str,
+                    "메모":     t.get("memo", ""),
                 })
             st.dataframe(pd.DataFrame(t_rows), use_container_width=True, hide_index=True)
 
-            # 누적 실현손익 차트
+            # ── 거래 삭제 ────────────────────────────────────────
+            st.markdown("---")
+            with st.expander("🗑️ 거래 삭제"):
+                trade_labels = [
+                    f"#{len(sim['trades'])-i}  {t['date']}  {t['name']}  {t['type']}  {t['shares']}주  {t['price']:,.0f}원"
+                    for i, t in enumerate(sim["trades"])
+                ]
+                del_sel = st.selectbox("삭제할 거래 선택", trade_labels, key="del_sel")
+                del_idx = trade_labels.index(del_sel)
+
+                st.warning(f"선택: **{del_sel}** — 삭제하면 이후 잔고가 자동 재계산됩니다.")
+                if st.button("🗑️ 삭제 확인", type="primary", key="del_confirm"):
+                    new_trades = [t for i, t in enumerate(sim["trades"]) if i != del_idx]
+                    new_cash, new_holdings, new_trades = rebuild_sim(sim["init_cash"], new_trades)
+                    sim["trades"]   = new_trades
+                    sim["cash"]     = new_cash
+                    sim["holdings"] = new_holdings
+                    save_simulation(session_id, sim)
+                    st.session_state.sim = sim
+                    st.success("✅ 삭제 완료! 잔고가 재계산됐습니다.")
+                    st.rerun()
+
+            # ── 거래 수정 ────────────────────────────────────────
+            with st.expander("✏️ 거래 수정"):
+                trade_labels2 = [
+                    f"#{len(sim['trades'])-i}  {t['date']}  {t['name']}  {t['type']}  {t['shares']}주  {t['price']:,.0f}원"
+                    for i, t in enumerate(sim["trades"])
+                ]
+                edit_sel = st.selectbox("수정할 거래 선택", trade_labels2, key="edit_sel")
+                edit_idx = trade_labels2.index(edit_sel)
+                et = sim["trades"][edit_idx]
+
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    e_name   = st.text_input("종목명",  value=et["name"],   key="e_name")
+                    e_type   = st.radio("구분", ["🟢 매수", "🔴 매도"],
+                                        index=0 if et["type"] == "매수" else 1,
+                                        horizontal=True, key="e_type")
+                    e_shares = st.number_input("수량 (주)", min_value=1, value=int(et["shares"]), key="e_shares")
+                with ec2:
+                    e_price  = st.number_input("단가 (원)", min_value=1, value=int(et["price"]),
+                                               step=100, key="e_price")
+                    try:
+                        e_date = st.date_input("거래일",
+                                               value=datetime.strptime(et["date"], "%Y-%m-%d").date(),
+                                               key="e_date")
+                    except Exception:
+                        e_date = st.date_input("거래일", key="e_date")
+                    e_memo   = st.text_input("메모", value=et.get("memo", ""), key="e_memo")
+
+                if st.button("💾 수정 저장", type="primary", key="edit_save"):
+                    updated = dict(et)
+                    updated.update({
+                        "name":  e_name,
+                        "type":  "매수" if "매수" in e_type else "매도",
+                        "shares": e_shares,
+                        "price":  e_price,
+                        "date":   str(e_date),
+                        "memo":   e_memo,
+                    })
+                    new_trades2 = list(sim["trades"])
+                    new_trades2[edit_idx] = updated
+                    new_cash2, new_hld2, new_trades2 = rebuild_sim(sim["init_cash"], new_trades2)
+                    sim["trades"]   = new_trades2
+                    sim["cash"]     = new_cash2
+                    sim["holdings"] = new_hld2
+                    save_simulation(session_id, sim)
+                    st.session_state.sim = sim
+                    st.success("✅ 수정 완료! 잔고가 재계산됐습니다.")
+                    st.rerun()
+
+            # ── 누적 실현손익 차트 ───────────────────────────────
             if sell_trades:
+                st.markdown("---")
                 st.markdown("#### 📈 실현 손익 누적 추이")
                 cum, running = [], 0
                 for t in reversed(sell_trades):
