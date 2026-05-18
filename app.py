@@ -3159,18 +3159,53 @@ elif page == "🎮 모의 투자":
 
     st.markdown("---")
 
-    # ── 인기 종목 목록 ───────────────────────────────────────────
-    sim_popular_us = {
-        "Apple": "AAPL", "Tesla": "TSLA", "NVIDIA": "NVDA",
-        "Microsoft": "MSFT", "Amazon": "AMZN", "Google": "GOOGL",
-        "Meta": "META", "S&P500 ETF": "SPY", "나스닥100 ETF": "QQQ",
-    }
-    sim_popular_kr = {
-        "삼성전자": "005930.KS", "SK하이닉스": "000660.KS",
-        "NAVER": "035420.KS", "카카오": "035720.KS",
-        "현대차": "005380.KS", "LG에너지솔루션": "373220.KS",
-        "셀트리온": "068270.KS", "KODEX 200": "069500.KS",
-    }
+    # ── 인기 종목 빠른 선택 버튼 ─────────────────────────────────
+    sim_popular_us = {"🍎 Apple":"AAPL","⚡ Tesla":"TSLA","🟢 NVIDIA":"NVDA",
+                      "🪟 MS":"MSFT","📦 Amazon":"AMZN","🔍 Google":"GOOGL",
+                      "👤 Meta":"META","📊 SPY":"SPY","📊 QQQ":"QQQ"}
+    sim_popular_kr = {"📱 삼성전자":"005930.KS","💾 SK하이닉스":"000660.KS",
+                      "🟩 NAVER":"035420.KS","💬 카카오":"035720.KS",
+                      "🚗 현대차":"005380.KS","🔋 LG엔솔":"373220.KS",
+                      "💉 셀트리온":"068270.KS","📊 KODEX200":"069500.KS"}
+
+    # 티커 직접 입력 (메인)
+    ti_col1, ti_col2 = st.columns([3, 1])
+    with ti_col1:
+        sim_ticker_raw = st.text_input(
+            "🔍 종목 티커 입력",
+            placeholder="미국: AAPL, TSLA, NVDA  /  한국: 005930 또는 005930.KS",
+            key="sim_ticker_input",
+            label_visibility="collapsed",
+        )
+    with ti_col2:
+        sim_market_sel = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], key="sim_market", label_visibility="collapsed")
+
+    # 인기 종목 버튼
+    st.caption("⚡ 빠른 선택")
+    pop_dict = sim_popular_us if "미국" in sim_market_sel else sim_popular_kr
+    btn_cols = st.columns(len(pop_dict))
+    for i, (name, ticker) in enumerate(pop_dict.items()):
+        with btn_cols[i]:
+            if st.button(name, key=f"sim_quick_{ticker}", use_container_width=True):
+                st.session_state.sim_ticker_input = ticker
+                st.rerun()
+
+    # 티커 확정: 한국시장에서 숫자만 입력하면 .KS 자동 추가
+    raw = st.session_state.get("sim_ticker_input", "").strip().upper()
+    if raw:
+        if "한국" in sim_market_sel and re.match(r"^\d{6}$", raw):
+            sim_ticker = raw + ".KS"
+        else:
+            sim_ticker = raw
+        # 이름: 인기 종목이면 표시명, 아니면 티커 그대로
+        all_pop = {**{v: k for k, v in sim_popular_us.items()},
+                   **{v: k for k, v in sim_popular_kr.items()}}
+        sim_name = all_pop.get(sim_ticker, sim_ticker)
+    else:
+        sim_ticker = ""
+        sim_name   = ""
+
+    sim_period = "3mo"   # 고정 (3개월)
 
     tab_sim_chart, tab_sim_portfolio, tab_sim_history = st.tabs(
         ["📈 차트 & 거래", "💼 포트폴리오", "📋 거래 내역"]
@@ -3180,35 +3215,6 @@ elif page == "🎮 모의 투자":
     # 탭 1: 차트 + 매수/매도
     # ════════════════════════════════════════════════════════════
     with tab_sim_chart:
-
-        # 종목 선택 UI
-        sc1, sc2, sc3 = st.columns([1.5, 2, 2])
-        with sc1:
-            sim_market = st.selectbox("시장", ["🇺🇸 미국", "🇰🇷 한국"], key="sim_market")
-        with sc2:
-            pop_dict = sim_popular_us if "미국" in sim_market else sim_popular_kr
-            pop_list = ["직접 입력"] + list(pop_dict.keys())
-            sim_pop_sel = st.selectbox("인기 종목", pop_list, key="sim_pop")
-        with sc3:
-            if sim_pop_sel == "직접 입력":
-                sim_ticker_raw = st.text_input(
-                    "티커 직접 입력",
-                    placeholder="예: AAPL  /  005930.KS",
-                    key="sim_ticker_input",
-                )
-                sim_ticker = sim_ticker_raw.strip().upper()
-                sim_name   = sim_ticker
-            else:
-                sim_ticker = pop_dict[sim_pop_sel]
-                sim_name   = sim_pop_sel
-
-        sim_period = st.select_slider(
-            "차트 기간",
-            options=["5d", "1mo", "3mo", "6mo", "1y", "2y"],
-            value="3mo",
-            key="sim_period",
-        )
-
         if not sim_ticker:
             st.info("위에서 종목을 선택하거나 티커를 입력하세요.")
         else:
